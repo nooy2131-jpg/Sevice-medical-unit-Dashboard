@@ -3,6 +3,7 @@
 /* eslint-disable react-hooks/set-state-in-effect */
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 import { DashboardView } from "./DashboardView";
 import { ReportFormView } from "./ReportFormView";
 import { RecordsTableView } from "./RecordsTableView";
@@ -40,6 +41,7 @@ export function ReportsDashboardClient({
 }: {
   initialDate: string;
 }) {
+  const router = useRouter();
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [periodEndDate, setPeriodEndDate] = useState(initialDate);
   const [loading, setLoading] = useState(true);
@@ -96,16 +98,17 @@ export function ReportsDashboardClient({
       periodEndDate={periodEndDate}
       onPeriodChange={setPeriodEndDate}
       onEditDate={(date) => {
-        window.location.href = `/reports/${date}`;
+        router.push(`/reports/${date}`);
       }}
       onNewReport={(date) => {
-        window.location.href = `/reports/${date ?? periodEndDate}`;
+        router.push(`/reports/${date ?? periodEndDate}`);
       }}
     />
   );
 }
 
 export function ReportsRecordsClient({ role }: { role: UserRole }) {
+  const router = useRouter();
   const [reports, setReports] = useState<DailyReport[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -213,7 +216,7 @@ export function ReportsRecordsClient({ role }: { role: UserRole }) {
       reports={reports}
       isAdmin={role === "admin"}
       onEditDate={(date) => {
-        window.location.href = `/reports/${date}`;
+        router.push(`/reports/${date}`);
       }}
       onDeleteDate={deleteReport}
       onExportCsv={exportCsv}
@@ -229,6 +232,7 @@ export function ReportEditorClient({
   initialDate: string;
   role: UserRole;
 }) {
+  const router = useRouter();
   const [reportDate, setReportDate] = useState(initialDate);
   const [published, setPublished] = useState<DailyReport | null>(null);
   const [draft, setDraft] = useState<DailyReport | null>(null);
@@ -306,29 +310,26 @@ export function ReportEditorClient({
     void loadDate(reportDate);
   }, [loadDate, reportDate]);
 
-  const persistDraft = useCallback(
-    async (value: DailyReport | null) => {
-      if (!value) return;
-      setDraftState("saving");
-      setError(null);
-      const response = await fetch(`/api/drafts/${value.reportDate}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          data: value,
-          expectedVersion: draftBaseVersion.current,
-        }),
-      });
-      const payload = await readJson(response);
-      if (!response.ok) {
-        setDraftState("error");
-        setError(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
-        throw new Error(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
-      }
-      setDraftState("saved");
-    },
-    [published?.version],
-  );
+  const persistDraft = useCallback(async (value: DailyReport | null) => {
+    if (!value) return;
+    setDraftState("saving");
+    setError(null);
+    const response = await fetch(`/api/drafts/${value.reportDate}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        data: value,
+        expectedVersion: draftBaseVersion.current,
+      }),
+    });
+    const payload = await readJson(response);
+    if (!response.ok) {
+      setDraftState("error");
+      setError(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
+      throw new Error(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
+    }
+    setDraftState("saved");
+  }, []);
   const scheduleDraft = (value: DailyReport) => {
     if (!latestDraft.current)
       draftBaseVersion.current = published?.version ?? 0;
@@ -413,7 +414,7 @@ export function ReportEditorClient({
       setError(getError(payload, "ลบรายงานไม่สำเร็จ"));
       return;
     }
-    window.location.href = "/records";
+    router.push("/records");
   };
   const moveDate = async (date: string) => {
     await flushDraft();
