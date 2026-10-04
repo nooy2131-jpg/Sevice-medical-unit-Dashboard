@@ -56,8 +56,9 @@ if (!canUseDatabase) {
       const email = `auth-test-revoked-${crypto.randomUUID()}@example.com`;
       createdEmails.push(email);
       const invitation = await createInvitation({ email, role: 'member', createdById: adminId });
-      await revokeInvitation(invitation.invitation.id);
+      await revokeInvitation(invitation.invitation.id, adminId);
       expect(await findUsableInvitationByToken(invitation.token)).toBeNull();
+      expect(await prisma.auditLog.findFirst({ where: { entityId: invitation.invitation.id, action: 'invitation.revoked' } })).not.toBeNull();
     });
   });
 

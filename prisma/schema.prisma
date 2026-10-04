@@ -77,6 +77,13 @@ model Verification {
   @@index([expiresAt])
 }
 
+model RateLimit {
+  id          String @id @default(cuid())
+  key         String @unique
+  count       Int
+  lastRequest BigInt
+}
+
 model Invitation {
   id          String    @id @default(cuid())
   email       String

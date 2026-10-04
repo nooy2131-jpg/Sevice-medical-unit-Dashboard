@@ -5,6 +5,10 @@ import { prisma } from './db';
 
 const INVITATION_HOURS = Number(process.env.INVITATION_EXPIRES_HOURS ?? '72');
 const APP_URL = (process.env.BETTER_AUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:40000').replace(/\/$/, '');
+const INVITATION_GLOBAL_LIMIT = 120;
+const INVITATION_GLOBAL_WINDOW_MS = 60_000;
+const INVITATION_TOKEN_LIMIT = 8;
+const INVITATION_TOKEN_WINDOW_MS = 15 * 60_000;
 
 export type InvitationRole = 'admin' | 'member';
 
@@ -96,11 +100,11 @@ export async function createInvitation(input: { email: string; role: InvitationR
   const role = input.role === 'admin' ? Role.admin : Role.member;
   const token = createInvitationToken();
   const invitation = await prisma.$transaction(async (tx) => {
-    await tx.invitation.updateMany({
+    const replaced = await tx.invitation.updateMany({
       where: { email, consumedAt: null, revokedAt: null },
       data: { revokedAt: new Date() },
     });
-    return tx.invitation.create({
+    const created = await tx.invitation.create({
       data: {
         email,
         role,
@@ -109,6 +113,15 @@ export async function createInvitation(input: { email: string; role: InvitationR
         createdById: input.createdById,
       },
     });
+    await tx.auditLog.create({
+      data: {
+        actorId: input.createdById,
+        action: replaced.count > 0 ? 'invitation.resent' : 'invitation.created',
+        entityId: created.id,
+        data: { email, role },
+      },
+    });
+    return created;
   });
   try {
     const delivery = await sendInvitationEmail(email, token, role);
@@ -126,14 +139,53 @@ export async function findUsableInvitationByToken(token: string) {
   return invitation;
 }
 
-export async function revokeInvitation(id: string): Promise<void> {
-  await prisma.invitation.updateMany({
-    where: { id, consumedAt: null, revokedAt: null },
-    data: { revokedAt: new Date() },
+export async function revokeInvitation(id: string, actorId?: string): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    const revoked = await tx.invitation.updateMany({
+      where: { id, consumedAt: null, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    if (revoked.count === 1 && actorId) {
+      await tx.auditLog.create({
+        data: { actorId, action: 'invitation.revoked', entityId: id },
+      });
+    }
   });
 }
 
+async function consumeRateLimitKey(key: string, max: number, windowMs: number): Promise<void> {
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${key}))`;
+    const now = Date.now();
+    const row = await tx.rateLimit.findUnique({ where: { key } });
+    if (!row) {
+      await tx.rateLimit.create({ data: { key, count: 1, lastRequest: BigInt(now) } });
+      return;
+    }
+    const lastRequest = Number(row.lastRequest);
+    if (now - lastRequest >= windowMs) {
+      await tx.rateLimit.update({ where: { key }, data: { count: 1, lastRequest: BigInt(now) } });
+      return;
+    }
+    if (row.count >= max) {
+      throw new InvitationError('rate_limited', 'Please try again later.', 429);
+    }
+    await tx.rateLimit.update({ where: { key }, data: { count: { increment: 1 }, lastRequest: BigInt(now) } });
+  });
+}
+
+export async function consumeInvitationAdmissionRateLimit(token: string): Promise<void> {
+  const tokenKey = `invitation-accept:token:${hashInvitationToken(token)}`;
+  await consumeRateLimitKey('invitation-accept:global', INVITATION_GLOBAL_LIMIT, INVITATION_GLOBAL_WINDOW_MS);
+  await consumeRateLimitKey(tokenKey, INVITATION_TOKEN_LIMIT, INVITATION_TOKEN_WINDOW_MS);
+}
+
 export async function acceptInvitation(input: { token: string; password: string; name: string }) {
+  const usableInvitation = await findUsableInvitationByToken(input.token);
+  if (!usableInvitation) {
+    throw new InvitationError('invalid_invitation', 'This invitation is invalid or expired.', 410);
+  }
+  await consumeInvitationAdmissionRateLimit(input.token);
   const tokenHash = hashInvitationToken(input.token);
   const passwordHash = await hashPassword(input.password);
   const result = await prisma.$transaction(async (tx) => {

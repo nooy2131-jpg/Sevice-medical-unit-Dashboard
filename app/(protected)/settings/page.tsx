@@ -72,7 +72,7 @@ export default function SettingsPage() {
   }
 
   async function resend(id: string) {
-    const response = await fetch(`/api/invitations/${id}/resend`, { method: 'POST' });
+    const response = await fetch(`/api/invitations/${id}`, { method: 'POST' });
     const data = (await response.json()) as { error?: { message?: string }; delivery?: 'sent' | 'skipped' };
     if (!response.ok) setError(data.error?.message ?? 'ส่งคำเชิญอีกครั้งไม่สำเร็จ');
     else {
