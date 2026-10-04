@@ -31,13 +31,36 @@ export async function readJson(request: Request, allowEmpty = false, maxBytes = 
   if (declaredLength !== null && Number(declaredLength) > maxBytes) {
     throw new HttpError(413, 'BODY_TOO_LARGE', 'Request body is too large.');
   }
-  let text: string;
+  const reader = request.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
   try {
-    text = await request.text();
+    if (reader) {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+        totalBytes += value.byteLength;
+        if (totalBytes > maxBytes) {
+          await reader.cancel();
+          throw new HttpError(413, 'BODY_TOO_LARGE', 'Request body is too large.');
+        }
+        chunks.push(value);
+      }
+    }
   } catch {
+    if (totalBytes > maxBytes) throw new HttpError(413, 'BODY_TOO_LARGE', 'Request body is too large.');
     throw new HttpError(400, 'INVALID_JSON', 'Request body must be valid JSON.');
+  } finally {
+    reader?.releaseLock();
   }
-  if (new TextEncoder().encode(text).byteLength > maxBytes) throw new HttpError(413, 'BODY_TOO_LARGE', 'Request body is too large.');
+  const bytes = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  const text = new TextDecoder().decode(bytes);
   if (!text.trim() && allowEmpty) return {};
   if (!text.trim()) throw new HttpError(400, 'INVALID_JSON', 'Request body must be valid JSON.');
   const contentType = request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();

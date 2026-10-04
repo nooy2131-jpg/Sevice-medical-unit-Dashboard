@@ -26,7 +26,7 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     assertSameOrigin(request);
-    const input = acceptSchema.parse(await readJson(request));
+    const input = acceptSchema.parse(await readJson(request, false, 4_096));
     const user = await acceptInvitation(input);
     return Response.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } }, { status: 201 });
   } catch (error) {
