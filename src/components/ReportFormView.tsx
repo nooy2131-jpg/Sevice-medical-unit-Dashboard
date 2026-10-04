@@ -1,12 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { DailyReport, ReportsMap, TopItem, formatThaiDate, normalizeTopItems } from '../types/report';
 import { DISEASE_PRESETS, PROCEDURE_PRESETS } from '../data/seedReports';
-import { Calculator, Check, RotateCcw, Trash2 } from 'lucide-react';
+import { Calculator, Check, ChevronLeft, ChevronRight, History, RotateCcw, Trash2 } from 'lucide-react';
 
 interface ReportFormViewProps {
   reportsMap: ReportsMap;
   initialDate: string;
-  onSave: (report: DailyReport) => void;
+  onSave: (report: DailyReport, originalDate?: string) => void;
   onDelete: (dateStr: string) => void;
   onCancel: () => void;
 }
@@ -51,6 +51,8 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
   const [numbers, setNumbers] = useState({
     totalMale: 0,
     totalFemale: 0,
+    thaiMale: 0,
+    thaiFemale: 0,
     genMale: 0,
     genFemale: 0,
     procMale: 0,
@@ -70,6 +72,11 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
   const [reporterNote, setReporterNote] = useState<string>('');
   const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
 
+  const savedDatesDesc = useMemo(
+    () => Object.keys(reportsMap).sort((a, b) => b.localeCompare(a)),
+    [reportsMap]
+  );
+
   const existingRecord = reportsMap[reportDate];
 
   useEffect(() => {
@@ -85,6 +92,8 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       setNumbers({
         totalMale: Number(rec.totalMale) || 0,
         totalFemale: Number(rec.totalFemale) || 0,
+        thaiMale: Number(rec.thaiMale) || 0,
+        thaiFemale: Number(rec.thaiFemale) || 0,
         genMale: Number(rec.genMale) || 0,
         genFemale: Number(rec.genFemale) || 0,
         procMale: Number(rec.procMale) || 0,
@@ -105,6 +114,8 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       setNumbers({
         totalMale: 0,
         totalFemale: 0,
+        thaiMale: 0,
+        thaiFemale: 0,
         genMale: 0,
         genFemale: 0,
         procMale: 0,
@@ -124,6 +135,13 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
     }
   }, [reportDate, reportsMap]);
 
+  const shiftDateByDays = (deltaDays: number) => {
+    const d = new Date(reportDate + 'T00:00:00');
+    if (isNaN(d.getTime())) return;
+    d.setDate(d.getDate() + deltaDays);
+    setReportDate(d.toISOString().slice(0, 10));
+  };
+
   const handleNumberChange = (field: keyof typeof numbers, value: string) => {
     const parsed = Math.max(0, parseInt(value, 10) || 0);
     setNumbers((prev) => ({ ...prev, [field]: parsed }));
@@ -131,9 +149,17 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
 
   const handleAutoSumFromServices = () => {
     const sumMale =
-      numbers.genMale + numbers.procMale + numbers.refillMale + numbers.referDocMale;
+      numbers.thaiMale +
+      numbers.genMale +
+      numbers.procMale +
+      numbers.refillMale +
+      numbers.referDocMale;
     const sumFemale =
-      numbers.genFemale + numbers.procFemale + numbers.refillFemale + numbers.referDocFemale;
+      numbers.thaiFemale +
+      numbers.genFemale +
+      numbers.procFemale +
+      numbers.refillFemale +
+      numbers.referDocFemale;
     setNumbers((prev) => ({
       ...prev,
       totalMale: sumMale,
@@ -145,6 +171,8 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
     setNumbers({
       totalMale: 0,
       totalFemale: 0,
+      thaiMale: 0,
+      thaiFemale: 0,
       genMale: 0,
       genFemale: 0,
       procMale: 0,
@@ -237,37 +265,43 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       fKey: 'totalFemale' as const,
     },
     {
-      title: '2. ตรวจโรคทั่วไป (OPD)',
+      title: '2. ผู้รับบริการแพทย์แผนไทย',
+      subtitle: 'ตรวจรักษาแพทย์แผนไทย นวด ประคบ อบสมุนไพร จ่ายยาสมุนไพร',
+      mKey: 'thaiMale' as const,
+      fKey: 'thaiFemale' as const,
+    },
+    {
+      title: '3. ตรวจโรคทั่วไป (OPD)',
       subtitle: 'ผู้ป่วยนอกตรวจรักษาโรคทั่วไป',
       mKey: 'genMale' as const,
       fKey: 'genFemale' as const,
     },
     {
-      title: '3. ทำหัตถการ',
+      title: '4. ทำหัตถการ',
       subtitle: 'ทำแผล ฉีดยา พ่นยา เย็บแผล ตัดไหม',
       mKey: 'procMale' as const,
       fKey: 'procFemale' as const,
     },
     {
-      title: '4. รับยาต่อเนื่อง / เติมยาเดิม',
+      title: '5. รับยาต่อเนื่อง / เติมยาเดิม',
       subtitle: 'คลินิกโรคเรื้อรังและรับยาเดิมตามนัด',
       mKey: 'refillMale' as const,
       fKey: 'refillFemale' as const,
     },
     {
-      title: '5. ขอใบส่งตัว',
+      title: '6. ขอใบส่งตัว',
       subtitle: 'ผู้ป่วยติดต่อขอหนังสือส่งตัวรักษาต่อ',
       mKey: 'referDocMale' as const,
       fKey: 'referDocFemale' as const,
     },
     {
-      title: '6. รับไว้รักษาใน รพ. (Admit)',
+      title: '7. รับไว้รักษาใน รพ. (Admit)',
       subtitle: 'ผู้ป่วยรับไว้เป็นผู้ป่วยในของโรงพยาบาล',
       mKey: 'admitMale' as const,
       fKey: 'admitFemale' as const,
     },
     {
-      title: '7. ส่งต่อรักษาที่อื่น (Refer Out)',
+      title: '8. ส่งต่อรักษาที่อื่น (Refer Out)',
       subtitle: 'ส่งตัวฉุกเฉินหรือส่งต่อไปโรงพยาบาลอื่น',
       mKey: 'referOutMale' as const,
       fKey: 'referOutFemale' as const,
@@ -284,30 +318,16 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
             <span aria-hidden="true">·</span>
             <span>
               {existingRecord
-                ? `พบข้อมูลเดิมของวันที่ ${formatThaiDate(reportDate, true)} (บันทึกเพื่ออัปเดตข้อมูล)`
+                ? `กำลังแก้ไขข้อมูลย้อนหลังของวันที่ ${formatThaiDate(reportDate, true)}`
                 : `สร้างรายงานใหม่สำหรับวันที่ ${formatThaiDate(reportDate, true)}`}
             </span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 mt-1">
-            บันทึกและแก้ไขข้อมูลรายงานประจำวัน
+            บันทึกข้อมูลประจำวัน / แก้ไขข้อมูลย้อนหลัง
           </h1>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <label htmlFor="report-date-input" className="text-xs font-medium text-slate-700">
-              วันที่รายงาน:
-            </label>
-            <input
-              id="report-date-input"
-              type="date"
-              required
-              value={reportDate}
-              onChange={(e) => setReportDate(e.target.value)}
-              className="border border-slate-300 bg-white rounded-lg px-3 py-1.5 text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-teal-600"
-            />
-          </div>
-
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
             onClick={handleResetForm}
@@ -319,10 +339,87 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
         </div>
       </div>
 
+      {/* Historical Date Selection & Navigation Panel */}
+      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
+              <History className="w-4 h-4 text-teal-600" />
+              <span>เลือกวันที่ต้องการบันทึก หรือแก้ไขข้อมูลย้อนหลัง</span>
+            </div>
+            <p className="text-xs text-slate-500">
+              สามารถเลือกวันที่ย้อนหลังวันใดก็ได้ หากวันที่เลือกมีข้อมูลอยู่แล้ว ระบบจะดึงข้อมูลเดิมขึ้นมาให้แก้ไขและบันทึกทับได้ทันที
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => shiftDateByDays(-1)}
+              title="ย้อนกลับ 1 วัน"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              วันก่อนหน้า
+            </button>
+
+            <input
+              id="report-date-input"
+              type="date"
+              required
+              aria-label="วันที่รายงาน"
+              value={reportDate}
+              onChange={(e) => setReportDate(e.target.value)}
+              className="border border-slate-300 bg-white rounded-lg px-3 py-1.5 text-sm font-mono font-semibold tabular-nums text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-600"
+            />
+
+            <button
+              type="button"
+              onClick={() => shiftDateByDays(1)}
+              title="ถัดไป 1 วัน"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap"
+            >
+              วันถัดไป
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Saved Historical Dates Quick Selector */}
+        {savedDatesDesc.length > 0 && (
+          <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <label htmlFor="saved-dates-select" className="text-xs font-medium text-slate-600">
+              ดึงข้อมูลจากวันที่เคยบันทึกไว้แล้ว ({savedDatesDesc.length} วัน):
+            </label>
+            <select
+              id="saved-dates-select"
+              value={existingRecord ? reportDate : ''}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setReportDate(e.target.value);
+                }
+              }}
+              className="border border-slate-300 bg-slate-50 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-600 tabular-nums sm:w-80"
+            >
+              <option value="">-- คลิกเลือกวันที่เคยบันทึกเพื่อแก้ไขย้อนหลัง --</option>
+              {savedDatesDesc.map((d) => {
+                const r = reportsMap[d];
+                const tot = (Number(r?.totalMale) || 0) + (Number(r?.totalFemale) || 0);
+                return (
+                  <option key={d} value={d}>
+                    {d} ({formatThaiDate(d, true)}) — รวม {tot} ราย
+                  </option>
+                );
+              })}
+            </select>
+          </div>
+        )}
+      </div>
+
       {/* Quick Helper Bar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="text-xs text-slate-600">
-          <strong className="text-slate-900">ตัวช่วยคำนวณอัตโนมัติ:</strong> กรอกยอดแยกตามประเภทบริการ (ข้อ 2–5) แล้วกดปุ่มเพื่อรวมเป็นยอดผู้รับบริการทั้งหมดได้ทันที
+          <strong className="text-slate-900">ตัวช่วยคำนวณอัตโนมัติ:</strong> กรอกยอดแยกตามแผนกบริการ (ข้อ 2–6: แพทย์แผนไทย, ตรวจโรคทั่วไป, หัตถการ, รับยาเดิม, ขอใบส่งตัว) แล้วกดปุ่มเพื่อรวมเป็นยอดผู้รับบริการทั้งหมดได้ทันที
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -331,12 +428,12 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap"
           >
             <Calculator className="w-3.5 h-3.5" />
-            รวมยอดข้อ 2–5 เป็นผู้รับบริการทั้งหมด
+            รวมยอดข้อ 2–6 เป็นผู้รับบริการทั้งหมด
           </button>
         </div>
       </div>
 
-      {/* 7 Metric Pairs Grid */}
+      {/* 8 Metric Pairs Grid */}
       <div className="bg-white border border-slate-200 rounded-xl p-6">
         <h2 className="text-base font-bold text-slate-900 pb-4 border-b border-slate-100">
           ส่วนที่ 1: จำนวนผู้รับบริการแยกตามประเภทและเพศ
@@ -351,7 +448,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
             return (
               <div
                 key={group.title}
-                className="pb-4 border-b border-slate-100 last:border-b-0 flex flex-col justify-between gap-3"
+                className="pb-4 border-b border-slate-100 last:border-b-0 md:nth-last-2:border-b-0 flex flex-col justify-between gap-3"
               >
                 <div className="flex items-baseline justify-between gap-2">
                   <div>
@@ -591,7 +688,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
               className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors"
             >
               <Check className="w-4 h-4" />
-              {existingRecord ? 'อัปเดตข้อมูลรายงานประจำวัน' : 'บันทึกข้อมูลรายงานประจำวัน'}
+              {existingRecord ? 'บันทึกการแก้ไขข้อมูลย้อนหลัง' : 'บันทึกข้อมูลรายงานประจำวัน'}
             </button>
           </div>
         </div>

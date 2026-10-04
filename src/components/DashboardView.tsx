@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { DailyReport, formatThaiDate, normalizeTopItems } from '../types/report';
-import { Printer, Plus, Calendar, ArrowUpRight } from 'lucide-react';
+import { Printer, Plus, Calendar, ArrowUpRight, Edit3 } from 'lucide-react';
 
 interface DashboardViewProps {
   reports: DailyReport[];
@@ -49,6 +49,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const acc = {
       totalMale: 0,
       totalFemale: 0,
+      thaiMale: 0,
+      thaiFemale: 0,
       genMale: 0,
       genFemale: 0,
       procMale: 0,
@@ -69,6 +71,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     for (const r of filteredReports) {
       acc.totalMale += Number(r.totalMale) || 0;
       acc.totalFemale += Number(r.totalFemale) || 0;
+      acc.thaiMale += Number(r.thaiMale) || 0;
+      acc.thaiFemale += Number(r.thaiFemale) || 0;
       acc.genMale += Number(r.genMale) || 0;
       acc.genFemale += Number(r.genFemale) || 0;
       acc.procMale += Number(r.procMale) || 0;
@@ -102,6 +106,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
 
     const totalAll = acc.totalMale + acc.totalFemale;
+    const totalThaiMed = acc.thaiMale + acc.thaiFemale;
 
     const topDiseases = Array.from(diseaseMap.entries())
       .map(([name, val]) => ({ name, ...val }))
@@ -119,6 +124,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return {
       ...acc,
       totalAll,
+      totalThaiMed,
       avgPerDay,
       topDiseases,
       topProcedures,
@@ -130,14 +136,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       <div className="bg-white border border-slate-200 rounded-xl p-12 text-center max-w-xl mx-auto my-8">
         <h2 className="text-xl font-bold text-slate-900">ยังไม่มีข้อมูลรายงานในระบบ</h2>
         <p className="text-sm text-slate-600 mt-2">
-          เริ่มต้นบันทึกข้อมูลผู้รับบริการประจำวันของหน่วยบริการชั่วคราว รพ.องครักษ์ เพื่อแสดงผลกราฟและสถิติวิเคราะห์
+          เริ่มต้นบันทึกข้อมูลผู้รับบริการประจำวัน หรือบันทึกข้อมูลย้อนหลังของหน่วยบริการชั่วคราว รพ.องครักษ์ เพื่อแสดงผลกราฟและสถิติวิเคราะห์
         </p>
         <button
           onClick={onNewReport}
           className="mt-6 inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
-          บันทึกข้อมูลประจำวัน
+          บันทึกข้อมูลประจำวัน / ย้อนหลัง
         </button>
       </div>
     );
@@ -149,6 +155,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
       male: stats.genMale,
       female: stats.genFemale,
       total: stats.genMale + stats.genFemale,
+    },
+    {
+      label: 'แพทย์แผนไทย (Thai Traditional Medicine)',
+      male: stats.thaiMale,
+      female: stats.thaiFemale,
+      total: stats.thaiMale + stats.thaiFemale,
     },
     {
       label: 'รับยาต่อเนื่อง / เติมยาเดิม (Medication Refill)',
@@ -288,6 +300,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
             </select>
           </div>
 
+          {activeSingleDate && (
+            <button
+              type="button"
+              onClick={() => onEditDate(activeSingleDate)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap"
+            >
+              <Edit3 className="w-3.5 h-3.5" />
+              แก้ไขข้อมูล ({activeSingleDate})
+            </button>
+          )}
+
           <button
             type="button"
             onClick={() => window.print()}
@@ -321,63 +344,61 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* KPI 2: General OPD */}
+        {/* KPI 2: Thai Traditional Medicine */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
           <div>
-            <div className="text-xs text-slate-500 font-medium">ตรวจโรคทั่วไป (OPD)</div>
+            <div className="text-xs text-slate-500 font-medium">ผู้รับบริการแพทย์แผนไทย</div>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {(stats.genMale + stats.genFemale).toLocaleString()}
+                {stats.totalThaiMed.toLocaleString()}
               </span>
               <span className="text-xs text-teal-700 font-medium tabular-nums">
-                ผู้ป่วยนอกทั่วไป
+                คลินิกแพทย์แผนไทย
               </span>
             </div>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 tabular-nums">
-            <span>ชาย {stats.genMale.toLocaleString()} ราย</span>
+            <span>ชาย {stats.thaiMale.toLocaleString()} ราย</span>
             <span aria-hidden="true">·</span>
-            <span>หญิง {stats.genFemale.toLocaleString()} ราย</span>
+            <span>หญิง {stats.thaiFemale.toLocaleString()} ราย</span>
           </div>
         </div>
 
-        {/* KPI 3: Procedures & Medication Refill */}
+        {/* KPI 3: General OPD & Medication Refill */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
           <div>
-            <div className="text-xs text-slate-500 font-medium">ทำหัตถการ & รับยาต่อเนื่อง</div>
+            <div className="text-xs text-slate-500 font-medium">ตรวจโรคทั่วไป & รับยาต่อเนื่อง</div>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {(stats.procMale + stats.procFemale + stats.refillMale + stats.refillFemale).toLocaleString()}
+                {(
+                  stats.genMale +
+                  stats.genFemale +
+                  stats.refillMale +
+                  stats.refillFemale
+                ).toLocaleString()}
               </span>
               <span className="text-xs text-slate-500 tabular-nums">
-                หัตถการ {(stats.procMale + stats.procFemale).toLocaleString()} ราย
+                ตรวจโรค {(stats.genMale + stats.genFemale).toLocaleString()} ราย
               </span>
             </div>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 tabular-nums">
-            <span>หัตถการ (ช {stats.procMale} / ญ {stats.procFemale})</span>
+            <span>OPD (ช {stats.genMale} / ญ {stats.genFemale})</span>
             <span aria-hidden="true">·</span>
             <span>รับยาเดิม {(stats.refillMale + stats.refillFemale).toLocaleString()} ราย</span>
           </div>
         </div>
 
-        {/* KPI 4: Referrals & Admissions */}
+        {/* KPI 4: Procedures, Referrals & Admissions */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
           <div>
-            <div className="text-xs text-slate-500 font-medium">ขอใบส่งตัว · Admit · Refer Out</div>
+            <div className="text-xs text-slate-500 font-medium">หัตถการ · ใบส่งตัว · Admit · Refer</div>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {(
-                  stats.referDocMale +
-                  stats.referDocFemale +
-                  stats.admitMale +
-                  stats.admitFemale +
-                  stats.referOutMale +
-                  stats.referOutFemale
-                ).toLocaleString()}
+                {(stats.procMale + stats.procFemale).toLocaleString()}
               </span>
               <span className="text-xs text-slate-500 tabular-nums">
-                รายการส่งต่อ/รับไว้
+                ทำหัตถการรวม (ราย)
               </span>
             </div>
           </div>
@@ -402,7 +423,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   แนวโน้มผู้รับบริการรายวัน (แยกตามเพศ)
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  คลิกที่แท่งกราฟเพื่อดูรายละเอียดเฉพาะของแต่ละวัน หรือกลับมาดูภาพรวมทั้งหมด
+                  คลิกที่แท่งกราฟเพื่อดูหรือแก้ไขข้อมูลย้อนหลังของแต่ละวัน
                 </p>
               </div>
               <div className="flex items-center gap-4 text-xs text-slate-600">
@@ -510,13 +531,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 })()}
               </strong>
             </span>
-            {rangeMode === 'SINGLE' && (
+            {activeSingleDate && (
               <button
                 type="button"
                 onClick={() => onEditDate(activeSingleDate)}
                 className="inline-flex items-center gap-1 text-teal-700 font-medium hover:underline no-print"
               >
-                แก้ไขข้อมูลวันที่ {activeSingleDate}
+                แก้ไขข้อมูลย้อนหลังวันที่ {activeSingleDate}
                 <ArrowUpRight className="w-3.5 h-3.5" />
               </button>
             )}
@@ -535,7 +556,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               </p>
             </div>
 
-            <div className="mt-4 space-y-4">
+            <div className="mt-4 space-y-3.5">
               {serviceRows.map((row) => {
                 const widthPct = Math.max(2, Math.round((row.total / maxServiceTotal) * 100));
                 const mPct = row.total > 0 ? Math.round((row.male / row.total) * 100) : 0;
@@ -577,7 +598,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 tabular-nums">
             <span>สัดส่วนเพศรวม: ชาย {malePct}% · หญิง {femalePct}%</span>
-            <span>รวม {stats.totalAll.toLocaleString()} ราย</span>
+            <span>แพทย์แผนไทย {stats.totalThaiMed.toLocaleString()} ราย</span>
           </div>
         </div>
       </div>
@@ -647,7 +668,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                 02. 5 อันดับหัตถการ (Top 5 Procedures)
               </h2>
               <p className="text-xs text-slate-500 mt-0.5">
-                รายการหัตถการทางการพยาบาลและการตรวจพิเศษที่ให้บริการสูงสุด
+                รายการหัตถการทางการพยาบาล แพทย์แผนไทย และการตรวจพิเศษที่ให้บริการสูงสุด
               </p>
             </div>
             <span className="text-xs text-slate-500 tabular-nums">จำนวน (ครั้ง)</span>
@@ -724,6 +745,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                     <span>{formatThaiDate(r.reportDate, true)}</span>
                     <span aria-hidden="true">·</span>
                     <span>ผู้รับบริการรวม {(r.totalMale + r.totalFemale).toLocaleString()} ราย</span>
+                    <span aria-hidden="true">·</span>
+                    <span>แพทย์แผนไทย {((r.thaiMale || 0) + (r.thaiFemale || 0)).toLocaleString()} ราย</span>
                   </div>
                   <p className="text-slate-700">
                     {r.reporterNote ? r.reporterNote : 'ไม่มีหมายเหตุเพิ่มเติม'}
@@ -734,7 +757,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                   onClick={() => onEditDate(r.reportDate)}
                   className="text-xs text-teal-700 font-medium hover:underline shrink-0 self-start sm:self-center no-print"
                 >
-                  แก้ไขข้อมูล
+                  แก้ไขข้อมูลย้อนหลัง
                 </button>
               </div>
             ))}

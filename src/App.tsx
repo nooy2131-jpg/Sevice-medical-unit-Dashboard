@@ -63,7 +63,7 @@ export default function App() {
     }));
     showToast(
       isUpdate
-        ? `อัปเดตข้อมูลรายงานประจำวันที่ ${report.reportDate} เรียบร้อยแล้ว`
+        ? `อัปเดตข้อมูลย้อนหลังของวันที่ ${report.reportDate} เรียบร้อยแล้ว`
         : `บันทึกข้อมูลรายงานประจำวันที่ ${report.reportDate} เรียบร้อยแล้ว`
     );
     setActiveTab('dashboard');
@@ -96,6 +96,8 @@ export default function App() {
       'ReportDate',
       'TotalMale',
       'TotalFemale',
+      'ThaiMale',
+      'ThaiFemale',
       'GenMale',
       'GenFemale',
       'ProcMale',
@@ -126,20 +128,22 @@ export default function App() {
     const rows = sorted.map((r) =>
       [
         r.reportDate,
-        r.totalMale,
-        r.totalFemale,
-        r.genMale,
-        r.genFemale,
-        r.procMale,
-        r.procFemale,
-        r.refillMale,
-        r.refillFemale,
-        r.referDocMale,
-        r.referDocFemale,
-        r.admitMale,
-        r.admitFemale,
-        r.referOutMale,
-        r.referOutFemale,
+        r.totalMale || 0,
+        r.totalFemale || 0,
+        r.thaiMale || 0,
+        r.thaiFemale || 0,
+        r.genMale || 0,
+        r.genFemale || 0,
+        r.procMale || 0,
+        r.procFemale || 0,
+        r.refillMale || 0,
+        r.refillFemale || 0,
+        r.referDocMale || 0,
+        r.referDocFemale || 0,
+        r.admitMale || 0,
+        r.admitFemale || 0,
+        r.referOutMale || 0,
+        r.referOutFemale || 0,
         JSON.stringify(r.topDiseases || []),
         JSON.stringify(r.topProcedures || []),
         r.reporterNote || '',
@@ -213,7 +217,7 @@ export default function App() {
                 : 'hover:text-slate-900'
             }`}
           >
-            บันทึกข้อมูลประจำวัน
+            บันทึก / แก้ไขย้อนหลัง
           </button>
           <button
             type="button"
@@ -244,7 +248,7 @@ export default function App() {
             onClick={handleNewReport}
             className="px-4 py-2 text-xs font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors whitespace-nowrap"
           >
-            + บันทึกรายงานวันนี้
+            + บันทึก / แก้ไขข้อมูล
           </button>
         </div>
       </header>
@@ -267,7 +271,7 @@ export default function App() {
             activeTab === 'form' ? 'bg-teal-50 text-teal-700 font-semibold' : ''
           }`}
         >
-          บันทึกข้อมูลประจำวัน
+          บันทึก / แก้ไขย้อนหลัง
         </button>
         <button
           type="button"
@@ -324,6 +328,7 @@ export default function App() {
           <RecordsTableView
             reports={reportsList}
             onEditDate={handleEditDate}
+            onNewReport={handleNewReport}
             onDeleteDate={handleDeleteReport}
             onExportCsv={handleExportCsv}
             onImportReports={handleImportReports}

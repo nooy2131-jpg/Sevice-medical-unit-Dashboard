@@ -1,10 +1,11 @@
 import React, { useMemo, useState } from 'react';
 import { DailyReport, formatThaiDate, normalizeTopItems } from '../types/report';
-import { Download, Upload, Search, Trash2, Edit3, Eye, X } from 'lucide-react';
+import { Download, Upload, Search, Trash2, Edit3, Eye, X, Plus } from 'lucide-react';
 
 interface RecordsTableViewProps {
   reports: DailyReport[];
   onEditDate: (dateStr: string) => void;
+  onNewReport: () => void;
   onDeleteDate: (dateStr: string) => void;
   onExportCsv: () => void;
   onImportReports: (imported: DailyReport[]) => void;
@@ -13,6 +14,7 @@ interface RecordsTableViewProps {
 export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
   reports,
   onEditDate,
+  onNewReport,
   onDeleteDate,
   onExportCsv,
   onImportReports,
@@ -84,29 +86,31 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
       const parsedRows: DailyReport[] = [];
       for (let i = 1; i < lines.length; i++) {
         const cols =
-          lines[i].split('\t').length >= 15 ? lines[i].split('\t') : lines[i].split(',');
+          lines[i].split('\t').length >= 17 ? lines[i].split('\t') : lines[i].split(',');
         const dateStr = (cols[0] || '').replace(/^"|"$/g, '').trim().slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
         parsedRows.push({
           reportDate: dateStr,
           totalMale: Number(cols[1]) || 0,
           totalFemale: Number(cols[2]) || 0,
-          genMale: Number(cols[3]) || 0,
-          genFemale: Number(cols[4]) || 0,
-          procMale: Number(cols[5]) || 0,
-          procFemale: Number(cols[6]) || 0,
-          refillMale: Number(cols[7]) || 0,
-          refillFemale: Number(cols[8]) || 0,
-          referDocMale: Number(cols[9]) || 0,
-          referDocFemale: Number(cols[10]) || 0,
-          admitMale: Number(cols[11]) || 0,
-          admitFemale: Number(cols[12]) || 0,
-          referOutMale: Number(cols[13]) || 0,
-          referOutFemale: Number(cols[14]) || 0,
+          thaiMale: Number(cols[3]) || 0,
+          thaiFemale: Number(cols[4]) || 0,
+          genMale: Number(cols[5]) || 0,
+          genFemale: Number(cols[6]) || 0,
+          procMale: Number(cols[7]) || 0,
+          procFemale: Number(cols[8]) || 0,
+          refillMale: Number(cols[9]) || 0,
+          refillFemale: Number(cols[10]) || 0,
+          referDocMale: Number(cols[11]) || 0,
+          referDocFemale: Number(cols[12]) || 0,
+          admitMale: Number(cols[13]) || 0,
+          admitFemale: Number(cols[14]) || 0,
+          referOutMale: Number(cols[15]) || 0,
+          referOutFemale: Number(cols[16]) || 0,
           topDiseases: [],
           topProcedures: [],
-          reporterNote: cols[17] ? String(cols[17]).replace(/^"|"$/g, '') : '',
-          updatedAt: cols[18] ? String(cols[18]).replace(/^"|"$/g, '') : new Date().toISOString(),
+          reporterNote: cols[19] ? String(cols[19]).replace(/^"|"$/g, '') : '',
+          updatedAt: cols[20] ? String(cols[20]).replace(/^"|"$/g, '') : new Date().toISOString(),
         });
       }
 
@@ -163,6 +167,15 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
 
           <button
             type="button"
+            onClick={onNewReport}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            เพิ่ม/แก้ไขข้อมูลย้อนหลัง
+          </button>
+
+          <button
+            type="button"
             onClick={() => setShowImportModal(true)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
           >
@@ -190,31 +203,35 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
                 <th className="py-3 px-4 whitespace-nowrap">วันที่รายงาน</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">ผู้รับบริการรวม (ช/ญ)</th>
+                <th className="py-3 px-3 text-right whitespace-nowrap">แพทย์แผนไทย (ช/ญ)</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">ตรวจโรคทั่วไป</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">หัตถการ</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">รับยาเดิม</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">ใบส่งตัว</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">Admit / Refer</th>
                 <th className="py-3 px-4 whitespace-nowrap">โรคอันดับ 1 · หมายเหตุ</th>
-                <th className="py-3 px-4 text-right whitespace-nowrap">จัดการ</th>
+                <th className="py-3 px-4 text-right whitespace-nowrap">จัดการข้อมูลย้อนหลัง</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
               {filteredAndSorted.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="py-10 text-center text-slate-400">
-                    ยังไม่มีรายการข้อมูลในตาราง
+                  <td colSpan={10} className="py-10 text-center text-slate-400">
+                    ยังไม่มีรายการข้อมูลในตาราง กดปุ่ม &ldquo;เพิ่ม/แก้ไขข้อมูลย้อนหลัง&rdquo; เพื่อเริ่มบันทึกข้อมูล
                   </td>
                 </tr>
               ) : (
                 filteredAndSorted.map((r) => {
-                  const totAll = r.totalMale + r.totalFemale;
-                  const totGen = r.genMale + r.genFemale;
-                  const totProc = r.procMale + r.procFemale;
-                  const totRefill = r.refillMale + r.refillFemale;
-                  const totReferDoc = r.referDocMale + r.referDocFemale;
-                  const totAdmit = r.admitMale + r.admitFemale;
-                  const totReferOut = r.referOutMale + r.referOutFemale;
+                  const totAll = (Number(r.totalMale) || 0) + (Number(r.totalFemale) || 0);
+                  const totThaiMed = (Number(r.thaiMale) || 0) + (Number(r.thaiFemale) || 0);
+                  const totGen = (Number(r.genMale) || 0) + (Number(r.genFemale) || 0);
+                  const totProc = (Number(r.procMale) || 0) + (Number(r.procFemale) || 0);
+                  const totRefill = (Number(r.refillMale) || 0) + (Number(r.refillFemale) || 0);
+                  const totReferDoc =
+                    (Number(r.referDocMale) || 0) + (Number(r.referDocFemale) || 0);
+                  const totAdmit = (Number(r.admitMale) || 0) + (Number(r.admitFemale) || 0);
+                  const totReferOut =
+                    (Number(r.referOutMale) || 0) + (Number(r.referOutFemale) || 0);
                   const topDis = normalizeTopItems(r.topDiseases)[0];
 
                   return (
@@ -233,35 +250,44 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                           {totAll.toLocaleString()}
                         </span>
                         <span className="text-slate-500 ml-1">
-                          ({r.totalMale}/{r.totalFemale})
+                          ({r.totalMale || 0}/{r.totalFemale || 0})
+                        </span>
+                      </td>
+
+                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
+                        <span className="font-semibold text-teal-800">
+                          {totThaiMed.toLocaleString()}
+                        </span>
+                        <span className="text-slate-400 ml-1">
+                          ({r.thaiMale || 0}/{r.thaiFemale || 0})
                         </span>
                       </td>
 
                       <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
                         <span className="font-semibold">{totGen}</span>
                         <span className="text-slate-400 ml-1">
-                          ({r.genMale}/{r.genFemale})
+                          ({r.genMale || 0}/{r.genFemale || 0})
                         </span>
                       </td>
 
                       <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
                         <span className="font-semibold">{totProc}</span>
                         <span className="text-slate-400 ml-1">
-                          ({r.procMale}/{r.procFemale})
+                          ({r.procMale || 0}/{r.procFemale || 0})
                         </span>
                       </td>
 
                       <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
                         <span className="font-semibold">{totRefill}</span>
                         <span className="text-slate-400 ml-1">
-                          ({r.refillMale}/{r.refillFemale})
+                          ({r.refillMale || 0}/{r.refillFemale || 0})
                         </span>
                       </td>
 
                       <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
                         <span className="font-semibold">{totReferDoc}</span>
                         <span className="text-slate-400 ml-1">
-                          ({r.referDocMale}/{r.referDocFemale})
+                          ({r.referDocMale || 0}/{r.referDocFemale || 0})
                         </span>
                       </td>
 
@@ -304,7 +330,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                             </button>
                           </div>
                         ) : (
-                          <div className="inline-flex items-center gap-1">
+                          <div className="inline-flex items-center gap-1.5">
                             <button
                               type="button"
                               onClick={() => setInspectReport(r)}
@@ -316,10 +342,11 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                             <button
                               type="button"
                               onClick={() => onEditDate(r.reportDate)}
-                              title="แก้ไขข้อมูล"
-                              className="p-1.5 text-teal-700 hover:bg-teal-50 rounded-md transition-colors"
+                              title="แก้ไขข้อมูลย้อนหลังของวันนี้"
+                              className="inline-flex items-center gap-1 px-2.5 py-1 text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md font-medium transition-colors"
                             >
-                              <Edit3 className="w-3.5 h-3.5" />
+                              <Edit3 className="w-3 h-3" />
+                              แก้ไข
                             </button>
                             <button
                               type="button"
@@ -365,13 +392,46 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
 
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               {[
-                { label: 'ผู้รับบริการทั้งหมด', m: inspectReport.totalMale, f: inspectReport.totalFemale },
-                { label: 'ตรวจโรคทั่วไป', m: inspectReport.genMale, f: inspectReport.genFemale },
-                { label: 'ทำหัตถการ', m: inspectReport.procMale, f: inspectReport.procFemale },
-                { label: 'รับยาต่อเนื่อง', m: inspectReport.refillMale, f: inspectReport.refillFemale },
-                { label: 'ขอใบส่งตัว', m: inspectReport.referDocMale, f: inspectReport.referDocFemale },
-                { label: 'รับไว้รักษา (Admit)', m: inspectReport.admitMale, f: inspectReport.admitFemale },
-                { label: 'ส่งต่อ (Refer Out)', m: inspectReport.referOutMale, f: inspectReport.referOutFemale },
+                {
+                  label: 'ผู้รับบริการทั้งหมด',
+                  m: inspectReport.totalMale || 0,
+                  f: inspectReport.totalFemale || 0,
+                },
+                {
+                  label: 'แพทย์แผนไทย',
+                  m: inspectReport.thaiMale || 0,
+                  f: inspectReport.thaiFemale || 0,
+                },
+                {
+                  label: 'ตรวจโรคทั่วไป',
+                  m: inspectReport.genMale || 0,
+                  f: inspectReport.genFemale || 0,
+                },
+                {
+                  label: 'ทำหัตถการ',
+                  m: inspectReport.procMale || 0,
+                  f: inspectReport.procFemale || 0,
+                },
+                {
+                  label: 'รับยาต่อเนื่อง',
+                  m: inspectReport.refillMale || 0,
+                  f: inspectReport.refillFemale || 0,
+                },
+                {
+                  label: 'ขอใบส่งตัว',
+                  m: inspectReport.referDocMale || 0,
+                  f: inspectReport.referDocFemale || 0,
+                },
+                {
+                  label: 'รับไว้รักษา (Admit)',
+                  m: inspectReport.admitMale || 0,
+                  f: inspectReport.admitFemale || 0,
+                },
+                {
+                  label: 'ส่งต่อ (Refer Out)',
+                  m: inspectReport.referOutMale || 0,
+                  f: inspectReport.referOutFemale || 0,
+                },
               ].map((item) => (
                 <div key={item.label} className="border border-slate-200 rounded-lg p-3">
                   <div className="text-slate-500">{item.label}</div>
@@ -429,7 +489,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                 }}
                 className="px-4 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg hover:bg-teal-700"
               >
-                แก้ไขข้อมูลวันนี้
+                แก้ไขข้อมูลย้อนหลังของวันนี้
               </button>
               <button
                 type="button"
