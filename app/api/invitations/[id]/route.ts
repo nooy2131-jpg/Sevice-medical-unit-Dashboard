@@ -28,9 +28,9 @@ export async function POST(request: Request, context: { params: Promise<{ id: st
 export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
     assertSameOrigin(request);
-    await requireAdmin();
+    const actor = await requireAdmin();
     const { id } = await context.params;
-    await revokeInvitation(id);
+    await revokeInvitation(id, actor.id);
     return Response.json({ ok: true });
   } catch (error) {
     return errorResponse(error);

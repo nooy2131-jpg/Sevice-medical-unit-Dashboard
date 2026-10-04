@@ -1,2 +1,9 @@
+@import "@fontsource/anuphan/400.css";
+@import "@fontsource/anuphan/600.css";
+@import "@fontsource/anuphan/700.css";
+@import "@fontsource/sarabun/400.css";
+@import "@fontsource/sarabun/600.css";
+@import "@fontsource/sarabun/700.css";
+@import "@fontsource/jetbrains-mono/400.css";
 @import "tailwindcss";
 @import "../src/index.css";
