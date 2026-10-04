@@ -61,7 +61,19 @@ function parsePreview(text: string, existing: DailyReport[]): ImportPreview {
       rows.some((row) => row.reportDate === reportDate)
     )
       duplicateDates.push(reportDate);
-    const value = (key: string) => Math.max(0, Number(cells[key]) || 0);
+    const value = (key: string): number => {
+      const raw = cells[key];
+      if (raw === "") return 0;
+      if (
+        typeof raw !== "number" ||
+        !Number.isFinite(raw) ||
+        !Number.isSafeInteger(raw) ||
+        raw < 0
+      ) {
+        throw new Error(`${key} must be a non-negative integer`);
+      }
+      return raw;
+    };
     try {
       rows.push(
         validateReport({
@@ -82,12 +94,8 @@ function parsePreview(text: string, existing: DailyReport[]): ImportPreview {
           admitFemale: value("admitFemale"),
           referOutMale: value("referOutMale"),
           referOutFemale: value("referOutFemale"),
-          topDiseases: Array.isArray(cells.topDiseases)
-            ? cells.topDiseases
-            : [],
-          topProcedures: Array.isArray(cells.topProcedures)
-            ? cells.topProcedures
-            : [],
+          topDiseases: cells.topDiseases,
+          topProcedures: cells.topProcedures,
           reporterNote:
             typeof cells.reporterNote === "string" ? cells.reporterNote : "",
           updatedAt:

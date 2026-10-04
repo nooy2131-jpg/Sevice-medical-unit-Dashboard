@@ -23,4 +23,22 @@ describe('CSV import/export', () => {
     expect((parseImportText(tsv)[0] as Record<string, unknown>).reportDate).toBe('2025-01-01');
     expect(parseImportText('{"2025-01-01": ' + JSON.stringify(report) + '}')).toHaveLength(1);
   });
+
+  it('preserves missing and malformed numeric cells for validation', () => {
+    const rows = parseImportText('ReportDate,TotalMale,TotalFemale\n2025-01-01,,oops') as Array<Record<string, unknown>>;
+    expect(rows[0].totalMale).toBe('');
+    expect(rows[0].totalFemale).toBe('oops');
+    expect(rows[0].thaiMale).toBeUndefined();
+  });
+
+  it('does not coerce non-array JSON item fields to empty arrays', () => {
+    const header = Array.from({ length: 21 }, (_, index) => `Column${index}`);
+    header[0] = 'ReportDate';
+    header[17] = 'TopDiseasesJson';
+    const row = Array.from({ length: 21 }, () => '');
+    row[0] = '2025-01-01';
+    row[17] = '{}';
+    const rows = parseImportText(`${header.join(',')}\n${row.map((cell) => JSON.stringify(cell)).join(',')}`) as Array<Record<string, unknown>>;
+    expect(rows[0].topDiseases).toEqual({});
+  });
 });

@@ -28,10 +28,9 @@ function protectFormula(value: unknown): unknown {
   return /^[=+\-@]/.test(text) ? `'${text}` : value;
 }
 
-function parseJsonCell(value: unknown): unknown[] {
+function parseJsonCell(value: unknown): unknown {
   if (typeof value !== 'string' || value.trim() === '') return [];
-  const parsed: unknown = JSON.parse(value);
-  return Array.isArray(parsed) ? parsed : [];
+  return JSON.parse(value);
 }
 
 function rowToReport(row: unknown[]): Record<string, unknown> {
@@ -43,7 +42,20 @@ function rowToReport(row: unknown[]): Record<string, unknown> {
     reporterNote: String(values[19] ?? ''),
     updatedAt: String(values[20] ?? ''),
   };
-  COUNT_FIELDS.forEach((field, index) => { report[field] = Number(values[index + 1] ?? 0); });
+  COUNT_FIELDS.forEach((field, index) => {
+    const raw = values[index + 1];
+    // Keep absent cells absent and leave malformed cells untouched. The preview
+    // validator can then distinguish an explicit blank from a bad value.
+    if (raw === undefined) {
+      report[field] = undefined;
+    } else if (raw === '') {
+      report[field] = '';
+    } else if (typeof raw === 'string' && /^\d+$/.test(raw.trim())) {
+      report[field] = Number(raw);
+    } else {
+      report[field] = raw;
+    }
+  });
   return report;
 }
 
