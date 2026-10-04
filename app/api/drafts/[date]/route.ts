@@ -35,10 +35,11 @@ export async function DELETE(request: Request, context: Context): Promise<NextRe
   try {
     assertSameOrigin(request);
     const actor = await requireUser();
-    const body = await readJson(request);
+    const body = await readJson(request, true);
     const input = typeof body === 'object' && body !== null && !Array.isArray(body) ? body as Record<string, unknown> : {};
     const { date } = await context.params;
-    await deleteDraft(date, input.expectedVersion, actor);
+    const expectedVersion = input.expectedVersion ?? new URL(request.url).searchParams.get('expectedVersion');
+    await deleteDraft(date, typeof expectedVersion === 'string' ? Number(expectedVersion) : expectedVersion, actor);
     return new NextResponse(null, { status: 204 });
   } catch (error) {
     return jsonError(asHttpError(error));

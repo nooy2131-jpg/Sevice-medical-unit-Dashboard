@@ -26,9 +26,12 @@ export function jsonError(error: unknown): NextResponse {
   return NextResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Unable to complete the request.' } }, { status: 500 });
 }
 
-export async function readJson(request: Request): Promise<unknown> {
+export async function readJson(request: Request, allowEmpty = false): Promise<unknown> {
   try {
-    return await request.json();
+    const text = await request.text();
+    if (!text.trim() && allowEmpty) return {};
+    if (!text.trim()) throw new Error('empty body');
+    return JSON.parse(text) as unknown;
   } catch {
     throw new HttpError(400, 'INVALID_JSON', 'Request body must be valid JSON.');
   }

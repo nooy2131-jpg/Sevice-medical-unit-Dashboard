@@ -117,6 +117,9 @@ export function validateReport(value: unknown): ReportPayload {
 }
 
 export function validateExpectedVersion(value: unknown): number {
+  // The UI represents a not-yet-published report as null; normalize that to the
+  // CAS sentinel used by the database while still rejecting omitted versions.
+  if (value === null) return 0;
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
     throw new ReportValidationError([{ path: 'expectedVersion', message: 'must be a non-negative integer' }]);
   }
