@@ -30,6 +30,8 @@ export const auth = betterAuth({
     maxPasswordLength: 128,
     resetPasswordTokenExpiresIn: 60 * 60,
     sendResetPassword: async ({ user, url }) => {
+      const member = await prisma.user.findUnique({ where: { id: user.id }, select: { active: true } });
+      if (!member?.active) return;
       await sendPasswordResetEmail(user.email, url);
     },
     revokeSessionsOnPasswordReset: true,
@@ -50,17 +52,14 @@ export const auth = betterAuth({
     validateUserInfo: async ({ user, source }) => {
       const email = typeof user.email === 'string' ? normalizeEmail(user.email) : '';
       if (!email) return { error: 'email_required', errorDescription: 'A verified email address is required.' };
+      const isGoogle = source.method === 'oauth' && source.oauth?.providerId === 'google';
+      if (isGoogle && source.oauth?.profile?.email_verified !== true) {
+        return { error: 'email_not_verified', errorDescription: 'Google must verify this email address.' };
+      }
       const existing = await prisma.user.findUnique({ where: { email }, select: { active: true } });
       if (existing?.active) return;
-      if (existing && !existing.active) {
-        return { error: 'account_inactive', errorDescription: 'This account has not been admitted.' };
-      }
-      if (source.method !== 'oauth' || source.oauth?.providerId !== 'google') {
+      if (!isGoogle) {
         return { error: 'invitation_required', errorDescription: 'An invitation is required.' };
-      }
-      const profileEmailVerified = source.oauth.profile?.email_verified;
-      if (profileEmailVerified !== true) {
-        return { error: 'email_not_verified', errorDescription: 'Google must verify this email address.' };
       }
       const invitation = await findUsableInvitationForEmail(email);
       if (!invitation) return { error: 'invitation_required', errorDescription: 'An invitation is required.' };

@@ -1,5 +1,5 @@
 import { headers } from 'next/headers';
-import { Prisma, Role } from '@/src/generated/prisma/client';
+import { Role } from '@/src/generated/prisma/client';
 import { auth } from './auth';
 import { prisma } from './db';
 
@@ -55,7 +55,11 @@ export async function updateUserMembership(actor: AuthenticatedUser, userId: str
     throw new AuthError('invalid_patch', 'A role or active status is required.', 400);
   }
   return prisma.$transaction(async (tx) => {
-    await tx.$queryRaw`SELECT pg_advisory_xact_lock(hashtext('medical-unit-active-admins'))`;
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('medical-unit-active-admins'))`;
+    const currentActor = await tx.user.findUnique({ where: { id: actor.id }, select: { role: true, active: true } });
+    if (!currentActor || !currentActor.active || currentActor.role !== Role.admin) {
+      throw new AuthError('forbidden', 'Admin access is required.', 403);
+    }
     const target = await tx.user.findUnique({ where: { id: userId } });
     if (!target) throw new AuthError('not_found', 'User not found.', 404);
     const nextRole = patch.role ? (patch.role === 'admin' ? Role.admin : Role.member) : target.role;
@@ -70,6 +74,12 @@ export async function updateUserMembership(actor: AuthenticatedUser, userId: str
       where: { id: userId },
       data: { role: nextRole, active: nextActive },
     });
+    if (!nextActive) {
+      await tx.invitation.updateMany({
+        where: { email: target.email, consumedAt: null, revokedAt: null },
+        data: { revokedAt: new Date() },
+      });
+    }
     await tx.auditLog.create({
       data: {
         actorId: actor.id,
@@ -79,5 +89,5 @@ export async function updateUserMembership(actor: AuthenticatedUser, userId: str
       },
     });
     return user;
-  }, { isolationLevel: Prisma.TransactionIsolationLevel.Serializable });
+  });
 }

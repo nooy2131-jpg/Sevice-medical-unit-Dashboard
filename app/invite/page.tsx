@@ -1,12 +1,12 @@
 'use client';
 
-import { FormEvent, useEffect, useState } from 'react';
+import { FormEvent, Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 
 type InviteInfo = { email: string; role: 'admin' | 'member'; expiresAt: string };
 
-export default function InvitePage() {
+function InviteForm() {
   const params = useSearchParams();
   const token = params.get('token') ?? '';
   const [invite, setInvite] = useState<InviteInfo | null>(null);
@@ -54,4 +54,8 @@ export default function InvitePage() {
       </section>
     </main>
   );
+}
+
+export default function InvitePage() {
+  return <Suspense fallback={<main className="flex min-h-screen items-center justify-center bg-slate-50 px-4"><p className="text-slate-600">กำลังตรวจสอบคำเชิญ…</p></main>}><InviteForm /></Suspense>;
 }

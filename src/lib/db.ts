@@ -8,6 +8,11 @@ const pool = globalForPrisma.pool ?? new Pool({ connectionString: process.env.DA
 const adapter = new PrismaPg(pool);
 export const prisma = globalForPrisma.prisma ?? new PrismaClient({ adapter });
 
+export async function disconnectDb(): Promise<void> {
+  await prisma.$disconnect();
+  await pool.end();
+}
+
 if (process.env.NODE_ENV !== 'production') {
   globalForPrisma.prisma = prisma;
   globalForPrisma.pool = pool;

@@ -8,7 +8,7 @@
         "@prisma/adapter-pg": "7.10.0",
         "@prisma/client": "7.10.0",
         "better-auth": "1.7.7",
-        "csv-parse": "^6.1.0",
+        "csv-parse": "7.0.3",
         "csv-stringify": "^6.6.0",
         "dotenv": "^17.2.3",
         "lucide-react": "^0.544.0",
@@ -579,7 +579,7 @@
 
     "csstype": ["csstype@3.2.3", "", {}, "sha512-z1HGKcYy2xA8AGQfwrn0PAy+PB7X/GSj3UVJW9qKyn43xWa+gl5nXmU4qqLMRzWVLFC8KusUX8T/0kCiOYpAIQ=="],
 
-    "csv-parse": ["csv-parse@6.2.1", "", {}, "sha512-LRLMV+UCyfMokp8Wb411duBf1gaBKJfOfBWU9eHMJ+b+cJYZsNu3AFmjJf3+yPGd59Exz1TsMjaSFyxnYB9+IQ=="],
+    "csv-parse": ["csv-parse@7.0.3", "", {}, "sha512-YFd3QM/yo17vH91L1IOZuvl09zM0zEEtdfTcOCKWcMdM++MNaQSyp09slXyFCLaPXvHstQFx/xC8myiFHSMUvw=="],
 
     "csv-stringify": ["csv-stringify@6.9.0", "", {}, "sha512-6b3e29CILFfSQ2nDRuZMRROzQOpPuJ+s8zPB5H7eK5ncXBbFOyVuRLU5Sx/zAUmVri3Ly49GyC8NEme4SVSAbA=="],
 

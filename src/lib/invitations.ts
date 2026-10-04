@@ -110,8 +110,13 @@ export async function createInvitation(input: { email: string; role: InvitationR
       },
     });
   });
-  const delivery = await sendInvitationEmail(email, token, role);
-  return { invitation, token, delivery };
+  try {
+    const delivery = await sendInvitationEmail(email, token, role);
+    return { invitation, token, delivery };
+  } catch (error) {
+    await prisma.invitation.update({ where: { id: invitation.id }, data: { revokedAt: new Date() } });
+    throw error;
+  }
 }
 
 export async function findUsableInvitationByToken(token: string) {
