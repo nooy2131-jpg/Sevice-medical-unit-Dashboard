@@ -27,6 +27,25 @@ export interface DailyReport {
   topProcedures: TopItem[];
   reporterNote: string;
   updatedAt: string;
+  /** Optimistic concurrency version assigned by the server. */
+  version?: number;
+  /** The account that last published the report. */
+  updatedBy?: string;
+  lastEditor?: {
+    id?: string;
+    name?: string | null;
+    email?: string | null;
+  } | null;
+}
+
+export type ReportSaveState = 'idle' | 'loading' | 'saving' | 'saved' | 'error' | 'conflict';
+
+export interface ReportDraftResponse {
+  draft?: DailyReport | null;
+  data?: DailyReport | null;
+  expectedVersion?: number;
+  version?: number;
+  updatedAt?: string;
 }
 
 export type ReportsMap = Record<string, DailyReport>;

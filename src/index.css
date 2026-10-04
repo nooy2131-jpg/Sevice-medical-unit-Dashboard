@@ -32,6 +32,38 @@
   }
 }
 
+@layer components {
+  .control-input {
+    min-height: 2.5rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    background: #fff;
+    padding: 0.5rem 0.75rem;
+    color: #0f172a;
+  }
+  .control-input:focus {
+    outline: 2px solid #0d9488;
+    outline-offset: 1px;
+  }
+  .control-button {
+    display: inline-flex;
+    min-height: 2.5rem;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    border: 1px solid #cbd5e1;
+    border-radius: 0.5rem;
+    background: #fff;
+    padding: 0.5rem 0.75rem;
+    color: #334155;
+    font-size: 0.8125rem;
+    font-weight: 600;
+  }
+  .control-button:hover { background: #f8fafc; }
+  .control-button:focus-visible { outline: 2px solid #0d9488; outline-offset: 2px; }
+  .field-label { display: block; color: #475569; font-size: 0.75rem; font-weight: 600; }
+}
+
 @media print {
   .no-print {
     display: none !important;
