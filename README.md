@@ -29,7 +29,7 @@ Browser workflows are defined in `e2e/` and run separately with `bun run test:e2
 
 ## Deployment
 
-Build and push immutable app and migration image digests (`docker build --target runner ...` and `docker build --target migrate ...`). Replace `REPLACE_WITH_DIGEST` and `REPLACE_WITH_MIGRATION_DIGEST` only through the GitOps review process. Inject runtime variables through the cluster's Infisical-managed `okr-unit-runtime` Secret and use a separate least-privilege migration credential in `okr-unit-migration`.
+Build and push immutable app and migration image digests (`docker build --target runner ...` and `docker build --target migrate ...`). Replace `REPLACE_WITH_DIGEST` and `REPLACE_WITH_MIGRATION_DIGEST` in the `@sha256:` image references only through the GitOps review process. Inject runtime variables through the cluster's Infisical-managed `okr-unit-runtime` Secret and use a separate least-privilege migration credential in `okr-unit-migration`.
 
 Run the migration Job deliberately after replacing the image digest and reviewing database compatibility. Select the intended cluster and namespace explicitly:
 

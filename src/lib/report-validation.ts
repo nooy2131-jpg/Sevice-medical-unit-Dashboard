@@ -126,6 +126,13 @@ export function validateExpectedVersion(value: unknown): number {
   return value;
 }
 
+export function validateExpectedDraftRevision(value: unknown): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0) {
+    throw new ReportValidationError([{ path: 'expectedDraftRevision', message: 'must be a non-negative integer' }]);
+  }
+  return value;
+}
+
 export function toReportPayload(data: unknown): ReportPayload {
   return validateReport(data);
 }

@@ -15,7 +15,7 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: ghcr.io/pingsunn/okr-unit-migrate:REPLACE_WITH_MIGRATION_DIGEST
+          image: ghcr.io/pingsunn/okr-unit-migrate@sha256:REPLACE_WITH_MIGRATION_DIGEST
           imagePullPolicy: IfNotPresent
           command: ["bun", "run", "prisma", "migrate", "deploy"]
           envFrom:

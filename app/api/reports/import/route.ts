@@ -8,7 +8,7 @@ export async function POST(request: Request): Promise<NextResponse> {
   try {
     assertSameOrigin(request);
     const actor = await requireAdmin();
-    const body = await readJson(request);
+    const body = await readJson(request, false, 10_000_000);
     if (typeof body !== 'object' || body === null || Array.isArray(body)) throw new HttpError(400, 'INVALID_BODY', 'Request body must be an object.');
     const input = body as Record<string, unknown>;
     const reports = Array.isArray(input.reports) ? input.reports : typeof input.csv === 'string' ? parseImportText(input.csv) : null;

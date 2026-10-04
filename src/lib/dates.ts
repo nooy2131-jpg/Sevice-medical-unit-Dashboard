@@ -1,5 +1,15 @@
 const DATE_RE = /^(\d{4})-(\d{2})-(\d{2})$/;
 
+export class CalendarDateError extends Error {
+  readonly status = 400;
+  readonly code = 'INVALID_DATE';
+
+  constructor() {
+    super('reportDate must be a valid YYYY-MM-DD calendar date');
+    this.name = 'CalendarDateError';
+  }
+}
+
 /** Return true only for a real proleptic Gregorian calendar date. */
 export function isCalendarDate(value: unknown): value is string {
   if (typeof value !== 'string') return false;
@@ -16,7 +26,7 @@ export function isCalendarDate(value: unknown): value is string {
 }
 
 export function assertCalendarDate(value: unknown): asserts value is string {
-  if (!isCalendarDate(value)) throw new Error('reportDate must be a valid YYYY-MM-DD calendar date');
+  if (!isCalendarDate(value)) throw new CalendarDateError();
 }
 
 /** Current date in Asia/Bangkok, independent of the server's local timezone. */

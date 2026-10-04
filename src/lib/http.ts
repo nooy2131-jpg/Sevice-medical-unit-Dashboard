@@ -26,11 +26,23 @@ export function jsonError(error: unknown): NextResponse {
   return NextResponse.json({ error: { code: 'INTERNAL_ERROR', message: 'Unable to complete the request.' } }, { status: 500 });
 }
 
-export async function readJson(request: Request, allowEmpty = false): Promise<unknown> {
+export async function readJson(request: Request, allowEmpty = false, maxBytes = 1_000_000): Promise<unknown> {
+  const declaredLength = request.headers.get('content-length');
+  if (declaredLength !== null && Number(declaredLength) > maxBytes) {
+    throw new HttpError(413, 'BODY_TOO_LARGE', 'Request body is too large.');
+  }
+  let text: string;
   try {
-    const text = await request.text();
-    if (!text.trim() && allowEmpty) return {};
-    if (!text.trim()) throw new Error('empty body');
+    text = await request.text();
+  } catch {
+    throw new HttpError(400, 'INVALID_JSON', 'Request body must be valid JSON.');
+  }
+  if (new TextEncoder().encode(text).byteLength > maxBytes) throw new HttpError(413, 'BODY_TOO_LARGE', 'Request body is too large.');
+  if (!text.trim() && allowEmpty) return {};
+  if (!text.trim()) throw new HttpError(400, 'INVALID_JSON', 'Request body must be valid JSON.');
+  const contentType = request.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase();
+  if (contentType !== 'application/json') throw new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json.');
+  try {
     return JSON.parse(text) as unknown;
   } catch {
     throw new HttpError(400, 'INVALID_JSON', 'Request body must be valid JSON.');
@@ -42,11 +54,8 @@ export function assertSameOrigin(request: Request): void {
   const origin = request.headers.get('origin');
   if (!origin) return;
   const requestUrl = new URL(request.url);
-  const configured = process.env.BETTER_AUTH_URL ? new URL(process.env.BETTER_AUTH_URL).origin : null;
-  const forwardedHost = request.headers.get('x-forwarded-host');
-  const forwardedProto = request.headers.get('x-forwarded-proto') ?? requestUrl.protocol.replace(':', '');
-  const forwardedOrigin = forwardedHost ? `${forwardedProto}://${forwardedHost}` : requestUrl.origin;
-  if (origin !== requestUrl.origin && origin !== forwardedOrigin && origin !== configured) {
+  const configured = process.env.BETTER_AUTH_URL ? new URL(process.env.BETTER_AUTH_URL).origin : requestUrl.origin;
+  if (origin !== configured) {
     throw new HttpError(403, 'ORIGIN_FORBIDDEN', 'Request origin is not allowed.');
   }
 }
@@ -63,5 +72,7 @@ export function asHttpError(error: unknown): HttpError {
   if (status === 409) return new HttpError(409, 'CONFLICT', 'The resource changed.');
   if (status === 410) return new HttpError(410, 'GONE', 'The requested resource is no longer available.');
   if (status === 429) return new HttpError(429, 'RATE_LIMITED', 'Too many requests.');
+  if (status === 413) return new HttpError(413, 'BODY_TOO_LARGE', 'Request body is too large.');
+  if (status === 415) return new HttpError(415, 'UNSUPPORTED_MEDIA_TYPE', 'Content-Type must be application/json.');
   return new HttpError(500, 'INTERNAL_ERROR', 'Unable to complete the request.');
 }

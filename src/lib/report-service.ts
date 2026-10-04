@@ -2,7 +2,7 @@ import { prisma } from './db';
 import type { Prisma, PrismaClient } from '@/src/generated/prisma/client';
 import { HttpError } from './http';
 import { assertCalendarDate } from './dates';
-import { type ReportPayload, validateExpectedVersion, validateReport } from './report-validation';
+import { type ReportPayload, validateExpectedDraftRevision, validateExpectedVersion, validateReport } from './report-validation';
 
 type Actor = { id: string; email: string; name: string | null; role: string };
 
@@ -21,6 +21,7 @@ export type PrivateDraft = {
   reportDate: string;
   data: ReportPayload;
   expectedVersion: number;
+  revision: number;
   updatedAt: string;
 };
 
@@ -51,6 +52,7 @@ function payloadFromRow(value: unknown): ReportPayload {
 
 function mapPublished(value: unknown): PublishedReport {
   const source = row(value, 'daily report');
+  if (source.deletedAt instanceof Date) throw new Error('A deleted report cannot be returned as published');
   const editor = source.updatedBy;
   const mappedEditor = editor === null || editor === undefined ? null : (() => {
     const user = row(editor, 'report editor');
@@ -74,6 +76,7 @@ function mapDraft(value: unknown): PrivateDraft {
     reportDate,
     data: validateReport(source.data),
     expectedVersion: numberValue(source.expectedVersion, 'draft expectedVersion'),
+    revision: numberValue(source.revision, 'draft revision'),
     updatedAt: isoDate(source.updatedAt, 'draft updatedAt'),
   };
 }
@@ -97,14 +100,14 @@ function auditData(actor: Actor, action: string, entityId: string, data?: Record
 }
 
 export async function listReports(): Promise<PublishedReport[]> {
-  const result = await database.dailyReport.findMany({ orderBy: { reportDate: 'asc' }, include: { updatedBy: true } });
+  const result = await database.dailyReport.findMany({ where: { deletedAt: null }, orderBy: { reportDate: 'asc' }, include: { updatedBy: true } });
   if (!Array.isArray(result)) throw new Error('Invalid reports returned by database');
   return result.map(mapPublished);
 }
 
 export async function findReport(reportDate: string): Promise<PublishedReport | null> {
   assertCalendarDate(reportDate);
-  const result = await database.dailyReport.findUnique({ where: { reportDate }, include: { updatedBy: true } });
+  const result = await database.dailyReport.findFirst({ where: { reportDate, deletedAt: null }, include: { updatedBy: true } });
   return result === null ? null : mapPublished(result);
 }
 
@@ -114,24 +117,39 @@ export async function saveReport(rawReport: unknown, rawExpectedVersion: unknown
   try {
     return await database.$transaction(async (tx) => {
       let reportRow: unknown;
+      let action = 'report.updated';
       if (expectedVersion === 0) {
-        reportRow = await tx.dailyReport.create({ data: reportCreateData(report, actor), include: { updatedBy: true } });
+        const existing = await tx.dailyReport.findUnique({ where: { reportDate: report.reportDate }, select: { version: true, deletedAt: true } });
+        if (existing === null) {
+          reportRow = await tx.dailyReport.create({ data: reportCreateData(report, actor), include: { updatedBy: true } });
+          action = 'report.created';
+        } else {
+          const tombstone = row(existing, 'report tombstone');
+          if (!(tombstone.deletedAt instanceof Date)) throw conflict('A report for this date already exists.');
+          const revived = await tx.dailyReport.updateMany({
+            where: { reportDate: report.reportDate, version: numberValue(tombstone.version, 'report version'), deletedAt: { not: null } },
+            data: { data: report as unknown as Prisma.InputJsonValue, version: { increment: 1 }, deletedAt: null, updatedById: actor.id },
+          });
+          if (revived.count !== 1) throw conflict('A report for this date changed while it was being restored.');
+          reportRow = await tx.dailyReport.findUnique({ where: { reportDate: report.reportDate }, include: { updatedBy: true } });
+          action = 'report.resurrected';
+        }
       } else {
         const changed = await tx.dailyReport.updateMany({
-          where: { reportDate: report.reportDate, version: expectedVersion },
+          where: { reportDate: report.reportDate, version: expectedVersion, deletedAt: null },
           data: { data: report as unknown as Prisma.InputJsonValue, version: { increment: 1 }, updatedById: actor.id },
         });
         if (changed.count !== 1) throw conflict();
         reportRow = await tx.dailyReport.findUnique({ where: { reportDate: report.reportDate }, include: { updatedBy: true } });
       }
       const mapped = mapPublished(reportRow);
-      await tx.auditLog.create({ data: auditData(actor, expectedVersion === 0 ? 'report.created' : 'report.updated', mapped.id, { reportDate: report.reportDate, version: mapped.version }) });
+      await tx.auditLog.create({ data: auditData(actor, action, mapped.id, { reportDate: report.reportDate, version: mapped.version }) });
       return mapped;
     });
   } catch (error) {
     if (error instanceof HttpError) throw error;
     const source = typeof error === 'object' && error !== null ? error as Record<string, unknown> : {};
-    if (expectedVersion === 0 && source.code === 'P2002') throw conflict('A report for this date was created by another editor.');
+    if (expectedVersion === 0 && source.code === 'P2002') throw conflict('A report for this date changed while it was being created.');
     throw error;
   }
 }
@@ -140,12 +158,17 @@ export async function deleteReport(reportDate: string, rawExpectedVersion: unkno
   assertCalendarDate(reportDate);
   const expectedVersion = validateExpectedVersion(rawExpectedVersion);
   await database.$transaction(async (tx) => {
-    const existing = await tx.dailyReport.findUnique({ where: { reportDate }, select: { id: true } });
+    const existing = await tx.dailyReport.findUnique({ where: { reportDate }, select: { id: true, version: true, deletedAt: true } });
     if (existing === null) throw new HttpError(404, 'REPORT_NOT_FOUND', 'No report exists for this date.');
     const existingRow = row(existing, 'report');
-    const deleted = await tx.dailyReport.deleteMany({ where: { reportDate, version: expectedVersion } });
+    if (existingRow.deletedAt instanceof Date) throw new HttpError(404, 'REPORT_NOT_FOUND', 'No report exists for this date.');
+    const deletedAt = new Date();
+    const deleted = await tx.dailyReport.updateMany({
+      where: { reportDate, version: expectedVersion, deletedAt: null },
+      data: { deletedAt, version: { increment: 1 }, updatedById: actor.id },
+    });
     if (deleted.count !== 1) throw conflict();
-    await tx.auditLog.create({ data: auditData(actor, 'report.deleted', stringValue(existingRow.id, 'report id'), { reportDate, version: expectedVersion }) });
+    await tx.auditLog.create({ data: auditData(actor, 'report.deleted', stringValue(existingRow.id, 'report id'), { reportDate, version: expectedVersion, deletedAt: deletedAt.toISOString() }) });
   });
 }
 
@@ -155,28 +178,40 @@ export async function getDraft(reportDate: string, actor: Actor): Promise<Privat
   return result === null ? null : mapDraft(result);
 }
 
-export async function saveDraft(reportDate: string, rawData: unknown, rawExpectedVersion: unknown, actor: Actor): Promise<PrivateDraft> {
+export async function saveDraft(reportDate: string, rawData: unknown, rawExpectedVersion: unknown, rawExpectedDraftRevision: unknown, actor: Actor): Promise<PrivateDraft> {
   assertCalendarDate(reportDate);
   const data = validateReport(rawData);
   if (data.reportDate !== reportDate) throw new HttpError(400, 'DATE_MISMATCH', 'Draft reportDate must match the URL date.');
   const expectedVersion = validateExpectedVersion(rawExpectedVersion);
-  const saved = await database.$transaction(async (tx) => {
-    const existing = await tx.draft.findUnique({ where: { userId_reportDate: { userId: actor.id, reportDate } } });
-    if (existing === null) {
-      return tx.draft.create({ data: { userId: actor.id, reportDate, data: data as unknown as Prisma.InputJsonValue, expectedVersion }, });
-    }
-    // Draft.expectedVersion records the published report version reviewed by the editor.
-    // It is deliberately not a private draft revision; autosave must remain recoverable
-    // across tabs and can update the base version after the UI explicitly reloads it.
-    return tx.draft.update({ where: { userId_reportDate: { userId: actor.id, reportDate } }, data: { data: data as unknown as Prisma.InputJsonValue, expectedVersion } });
-  });
+  const expectedDraftRevision = validateExpectedDraftRevision(rawExpectedDraftRevision);
+  let saved: unknown;
+  try {
+    saved = await database.$transaction(async (tx) => {
+      const existing = await tx.draft.findUnique({ where: { userId_reportDate: { userId: actor.id, reportDate } } });
+      if (existing === null) {
+        if (expectedDraftRevision !== 0) throw conflict('The draft no longer exists.');
+        return tx.draft.create({ data: { userId: actor.id, reportDate, data: data as unknown as Prisma.InputJsonValue, expectedVersion, revision: 1 }, });
+      }
+      const changed = await tx.draft.updateMany({
+        where: { userId: actor.id, reportDate, revision: expectedDraftRevision },
+        data: { data: data as unknown as Prisma.InputJsonValue, expectedVersion, revision: { increment: 1 } },
+      });
+      if (changed.count !== 1) throw conflict('This draft changed in another tab.');
+      return tx.draft.findUnique({ where: { userId_reportDate: { userId: actor.id, reportDate } } });
+    });
+  } catch (error) {
+    if (error instanceof HttpError) throw error;
+    const source = typeof error === 'object' && error !== null ? error as Record<string, unknown> : {};
+    if (source.code === 'P2002') throw conflict('A draft for this date was created in another tab.');
+    throw error;
+  }
   return mapDraft(saved);
 }
 
-export async function deleteDraft(reportDate: string, rawExpectedVersion: unknown, actor: Actor): Promise<void> {
+export async function deleteDraft(reportDate: string, rawExpectedDraftRevision: unknown, actor: Actor): Promise<void> {
   assertCalendarDate(reportDate);
-  const expectedVersion = validateExpectedVersion(rawExpectedVersion);
-  const deleted = await database.draft.deleteMany({ where: { userId: actor.id, reportDate, expectedVersion } });
+  const expectedDraftRevision = validateExpectedDraftRevision(rawExpectedDraftRevision);
+  const deleted = await database.draft.deleteMany({ where: { userId: actor.id, reportDate, revision: expectedDraftRevision } });
   if (deleted.count === 0) {
     const existing = await database.draft.findUnique({ where: { userId_reportDate: { userId: actor.id, reportDate } }, select: { reportDate: true } });
     if (existing !== null) throw conflict('This draft was changed in another tab.');
@@ -204,23 +239,36 @@ export async function importReports(input: ImportInput, actor: Actor): Promise<{
     const skipped: string[] = [];
     for (const report of reports) {
       const current = await tx.dailyReport.findUnique({ where: { reportDate: report.reportDate }, include: { updatedBy: true } });
-      if (current !== null && input.mode === 'skip') {
+      const currentRow = current === null ? null : row(current, 'import report');
+      const isTombstone = currentRow !== null && currentRow.deletedAt instanceof Date;
+      if (current !== null && !isTombstone && input.mode === 'skip') {
         skipped.push(report.reportDate);
         continue;
       }
       const expectedVersion = input.expectedVersions[report.reportDate] ?? 0;
       let saved: unknown;
+      let action = 'report.imported';
       if (current === null) {
         if (expectedVersion !== 0) throw conflict(`No current report exists for ${report.reportDate}.`);
         saved = await tx.dailyReport.create({ data: reportCreateData(report, actor), include: { updatedBy: true } });
+      } else if (currentRow !== null && isTombstone) {
+        if (expectedVersion !== 0) throw conflict(`Deleted report ${report.reportDate} must be imported as a new report.`);
+        const restored = await tx.dailyReport.updateMany({
+          where: { reportDate: report.reportDate, version: numberValue(currentRow.version, 'report version'), deletedAt: { not: null } },
+          data: { data: report as unknown as Prisma.InputJsonValue, version: { increment: 1 }, deletedAt: null, updatedById: actor.id },
+        });
+        if (restored.count !== 1) throw conflict(`Report ${report.reportDate} changed during import.`);
+        saved = await tx.dailyReport.findUnique({ where: { reportDate: report.reportDate }, include: { updatedBy: true } });
+        action = 'report.import.resurrected';
       } else {
-        const changed = await tx.dailyReport.updateMany({ where: { reportDate: report.reportDate, version: expectedVersion }, data: { data: report as unknown as Prisma.InputJsonValue, version: { increment: 1 }, updatedById: actor.id } });
+        const changed = await tx.dailyReport.updateMany({ where: { reportDate: report.reportDate, version: expectedVersion, deletedAt: null }, data: { data: report as unknown as Prisma.InputJsonValue, version: { increment: 1 }, updatedById: actor.id } });
         if (changed.count !== 1) throw conflict(`Report ${report.reportDate} changed during import.`);
         saved = await tx.dailyReport.findUnique({ where: { reportDate: report.reportDate }, include: { updatedBy: true } });
+        action = 'report.import.overwritten';
       }
       const mapped = mapPublished(saved);
       imported.push(mapped);
-      await tx.auditLog.create({ data: auditData(actor, current === null ? 'report.imported' : 'report.import.overwritten', mapped.id, { reportDate: report.reportDate, version: mapped.version }) });
+      await tx.auditLog.create({ data: auditData(actor, action, mapped.id, { reportDate: report.reportDate, version: mapped.version }) });
     }
     return { reports: imported, skipped };
   });

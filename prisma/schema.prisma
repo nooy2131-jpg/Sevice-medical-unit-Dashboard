@@ -110,8 +110,11 @@ model DailyReport {
   updatedById String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  deletedAt   DateTime?
   createdBy   User     @relation("ReportCreator", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy   User     @relation("ReportEditor", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([deletedAt])
 }
 
 model Draft {
@@ -120,6 +123,7 @@ model Draft {
   reportDate    String
   data          Json
   expectedVersion Int    @default(0)
+  revision      Int      @default(1)
   updatedAt     DateTime @updatedAt
   createdAt     DateTime @default(now())
   user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
