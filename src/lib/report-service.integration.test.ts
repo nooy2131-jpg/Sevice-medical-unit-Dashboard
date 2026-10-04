@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { prisma } from './db';
-import { findReport, importReports, saveDraft, saveReport } from './report-service';
+import { deleteDraft, deleteReport, findReport, getDraft, importReports, saveDraft, saveReport } from './report-service';
 import type { ReportPayload } from './report-validation';
 
 const canRun = process.env.OKR_RUN_DB_TESTS === '1' && /(?:localhost|127\.0\.0\.1)/.test(process.env.DATABASE_URL ?? '');
@@ -44,9 +44,33 @@ suite('report service database invariants', () => {
   });
 
   it('stores a draft against a nonzero published base version', async () => {
-    const draft = await saveDraft(dates[0], report(dates[0], 12), 2, actor);
+    const draft = await saveDraft(dates[0], report(dates[0], 12), 2, 0, actor);
     expect(draft.expectedVersion).toBe(2);
+    expect(draft.revision).toBe(1);
     expect(draft.data.totalMale).toBe(12);
+
+    const saved = await saveDraft(dates[0], report(dates[0], 13), 2, draft.revision, actor);
+    expect(saved.revision).toBe(2);
+    const autosaves = await Promise.allSettled([
+      saveDraft(dates[0], report(dates[0], 14), 2, saved.revision, actor),
+      saveDraft(dates[0], report(dates[0], 15), 2, saved.revision, actor),
+    ]);
+    expect(autosaves.filter((result) => result.status === 'fulfilled')).toHaveLength(1);
+    await expect(deleteDraft(dates[0], saved.revision, actor)).rejects.toBeDefined();
+    expect((await getDraft(dates[0], actor))?.revision).toBe(3);
+  });
+
+  it('keeps a tombstone so stale updates cannot pass after delete and recreate', async () => {
+    const current = await findReport(dates[0]);
+    if (!current) throw new Error('expected seeded integration report');
+    await deleteReport(dates[0], current.version, actor);
+    expect(await findReport(dates[0])).toBeNull();
+    await expect(saveReport(report(dates[0], 16), current.version, actor)).rejects.toBeDefined();
+    const imported = await importReports({ reports: [report(dates[0], 17)], mode: 'overwrite', expectedVersions: { [dates[0]]: 0 } }, actor);
+    const recreated = imported.reports[0];
+    if (!recreated) throw new Error('expected imported report');
+    expect(recreated.version).toBe(current.version + 2);
+    expect(recreated.totalMale).toBe(17);
   });
 
   it('rolls back an import when one overwrite CAS fails', async () => {
