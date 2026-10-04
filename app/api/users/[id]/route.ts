@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { AuthError, requireAdmin, updateUserMembership } from '@/src/lib/authorization';
+import { assertSameOrigin, HttpError, readJson } from '@/src/lib/http';
 
 const patchSchema = z.object({
   role: z.enum(['admin', 'member']).optional(),
@@ -7,15 +8,16 @@ const patchSchema = z.object({
 }).refine((value) => value.role !== undefined || value.active !== undefined, { message: 'role or active is required' });
 
 function errorResponse(error: unknown) {
-  if (error instanceof AuthError) return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status });
+  if (error instanceof AuthError || error instanceof HttpError) return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status });
   console.error(error);
   return Response.json({ error: { code: 'internal_error', message: 'An unexpected error occurred.' } }, { status: 500 });
 }
 
 export async function PATCH(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    assertSameOrigin(request);
     const actor = await requireAdmin();
-    const input = patchSchema.parse(await request.json());
+    const input = patchSchema.parse(await readJson(request));
     const { id } = await context.params;
     const user = await updateUserMembership(actor, id, input);
     return Response.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role, active: user.active } });

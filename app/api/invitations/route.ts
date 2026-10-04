@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { requireAdmin, AuthError } from '@/src/lib/authorization';
 import { createInvitation, InvitationError, serializeInvitation } from '@/src/lib/invitations';
 import { prisma } from '@/src/lib/db';
+import { assertSameOrigin, HttpError, readJson } from '@/src/lib/http';
 
 const createSchema = z.object({
   email: z.string().trim().email().max(320),
@@ -9,7 +10,7 @@ const createSchema = z.object({
 });
 
 function errorResponse(error: unknown) {
-  if (error instanceof AuthError || error instanceof InvitationError) {
+  if (error instanceof AuthError || error instanceof InvitationError || error instanceof HttpError) {
     return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status });
   }
   console.error(error);
@@ -28,8 +29,9 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    assertSameOrigin(request);
     const actor = await requireAdmin();
-    const input = createSchema.parse(await request.json());
+    const input = createSchema.parse(await readJson(request));
     const result = await createInvitation({ ...input, createdById: actor.id });
     return Response.json({ invitation: serializeInvitation(result.invitation), delivery: result.delivery }, { status: 201 });
   } catch (error) {

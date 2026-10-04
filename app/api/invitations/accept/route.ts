@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { acceptInvitation, findUsableInvitationByToken, InvitationError } from '@/src/lib/invitations';
+import { assertSameOrigin, HttpError, readJson } from '@/src/lib/http';
 
 const acceptSchema = z.object({
   token: z.string().min(32).max(128),
@@ -8,7 +9,7 @@ const acceptSchema = z.object({
 });
 
 function errorResponse(error: unknown) {
-  if (error instanceof InvitationError) {
+  if (error instanceof InvitationError || error instanceof HttpError) {
     return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status });
   }
   console.error(error);
@@ -24,7 +25,8 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   try {
-    const input = acceptSchema.parse(await request.json());
+    assertSameOrigin(request);
+    const input = acceptSchema.parse(await readJson(request));
     const user = await acceptInvitation(input);
     return Response.json({ ok: true, user: { id: user.id, email: user.email, name: user.name, role: user.role } }, { status: 201 });
   } catch (error) {

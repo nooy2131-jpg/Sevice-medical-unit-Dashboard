@@ -11,13 +11,35 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://okr:ci-password@127.0.0.1:5432/okr_ci
+      BETTER_AUTH_SECRET: ci-build-secret-012345678901234567890123
+      BETTER_AUTH_URL: http://localhost:40000
+      BETTER_AUTH_TRUSTED_ORIGINS: http://localhost:40000
+      OKR_RUN_DB_TESTS: '1'
+      OKR_AUTH_TESTS: '1'
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: okr
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: okr_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U okr -d okr_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.2
       - run: bun install --frozen-lockfile
-      - run: bun run prisma generate
+      - run: bun run db:generate
+      - run: bun run db:deploy
       - run: bun run lint
       - run: bun run typecheck
       - run: bun test

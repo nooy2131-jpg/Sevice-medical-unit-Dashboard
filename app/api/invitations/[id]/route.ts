@@ -1,17 +1,19 @@
 import { requireAdmin, AuthError } from '@/src/lib/authorization';
 import { createInvitation, InvitationError, revokeInvitation, serializeInvitation } from '@/src/lib/invitations';
 import { prisma } from '@/src/lib/db';
+import { assertSameOrigin, HttpError } from '@/src/lib/http';
 
 function errorResponse(error: unknown) {
-  if (error instanceof AuthError || error instanceof InvitationError) {
+  if (error instanceof AuthError || error instanceof InvitationError || error instanceof HttpError) {
     return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status });
   }
   console.error(error);
   return Response.json({ error: { code: 'internal_error', message: 'An unexpected error occurred.' } }, { status: 500 });
 }
 
-export async function POST(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function POST(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    assertSameOrigin(request);
     const actor = await requireAdmin();
     const { id } = await context.params;
     const existing = await prisma.invitation.findUnique({ where: { id } });
@@ -23,8 +25,9 @@ export async function POST(_request: Request, context: { params: Promise<{ id: s
   }
 }
 
-export async function DELETE(_request: Request, context: { params: Promise<{ id: string }> }) {
+export async function DELETE(request: Request, context: { params: Promise<{ id: string }> }) {
   try {
+    assertSameOrigin(request);
     await requireAdmin();
     const { id } = await context.params;
     await revokeInvitation(id);

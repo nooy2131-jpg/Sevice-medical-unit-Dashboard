@@ -7,7 +7,8 @@ FROM deps AS builder
 WORKDIR /app
 COPY . .
 ENV DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build
-ENV BETTER_AUTH_SECRET=build-only-secret
+# Build-time placeholder only; the runtime secret is injected by the deployment.
+ENV BETTER_AUTH_SECRET=build-only-secret-012345678901234567890123
 RUN bun run db:generate
 RUN bun run build
 

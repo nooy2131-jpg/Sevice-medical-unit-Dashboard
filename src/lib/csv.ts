@@ -1,5 +1,7 @@
-import { parse as parseCsv } from 'csv-parse/sync';
-import { stringify as stringifyCsv } from 'csv-stringify/sync';
+// Use the browser entry points because this module is imported by client components.
+// The regular sync entry points pull Node stream/buffer dependencies into the client bundle.
+import { parse as parseCsv } from 'csv-parse/browser/esm/sync';
+import { stringify as stringifyCsv } from 'csv-stringify/browser/esm/sync';
 import type { ReportPayload } from './report-validation';
 
 const HEADERS = [
@@ -9,10 +11,12 @@ const HEADERS = [
   'ReporterNote', 'UpdatedAt',
 ] as const;
 
-const COUNT_FIELDS: Array<keyof ReportPayload> = [
+const COUNT_FIELDS = [
   'totalMale', 'totalFemale', 'thaiMale', 'thaiFemale', 'genMale', 'genFemale', 'procMale', 'procFemale',
   'refillMale', 'refillFemale', 'referDocMale', 'referDocFemale', 'admitMale', 'admitFemale', 'referOutMale', 'referOutFemale',
-];
+] as const satisfies readonly (keyof ReportPayload)[];
+
+type CsvReport = Pick<ReportPayload, 'reportDate' | typeof COUNT_FIELDS[number] | 'topDiseases' | 'topProcedures' | 'reporterNote' | 'updatedAt'>;
 
 function unprotectFormula(value: unknown): unknown {
   if (typeof value !== 'string') return value;
@@ -59,12 +63,17 @@ export function parseImportText(input: string): unknown[] {
   return rows.slice(1).map((row) => rowToReport(row));
 }
 
-export function stringifyReportsCsv(reports: readonly ReportPayload[]): string {
+export function stringifyReportsCsv(reports: readonly CsvReport[]): string {
   const records = reports.map((report) => [
     report.reportDate, ...COUNT_FIELDS.map((field) => report[field]), JSON.stringify(report.topDiseases), JSON.stringify(report.topProcedures),
     report.reporterNote, report.updatedAt ?? '',
   ].map(protectFormula));
   return `\uFEFF${stringifyCsv([HEADERS, ...records], { quoted: true, record_delimiter: '\n' })}`;
 }
+
+// Keep the names used by the client components stable while retaining the
+// descriptive names used by the API and tests.
+export const parseReportsImport = parseImportText;
+export const exportReportsCsv = stringifyReportsCsv;
 
 export { HEADERS as REPORT_CSV_HEADERS };

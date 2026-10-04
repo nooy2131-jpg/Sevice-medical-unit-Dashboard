@@ -149,7 +149,16 @@ export function ReportsRecordsClient({ role }: { role: UserRole }) {
     URL.revokeObjectURL(url);
   };
   const deleteReport = async (date: string) => {
-    const response = await fetch(`/api/reports/${date}`, { method: "DELETE" });
+    const selected = reports.find((report) => report.reportDate === date);
+    if (selected?.version === undefined) {
+      setError("ไม่พบเวอร์ชันล่าสุดของรายงาน กรุณาโหลดข้อมูลใหม่");
+      return;
+    }
+    const response = await fetch(`/api/reports/${date}`, {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ expectedVersion: selected.version }),
+    });
     if (!response.ok) {
       const payload = await readJson(response);
       setError(getError(payload, "ลบรายงานไม่สำเร็จ"));
@@ -363,7 +372,9 @@ export function ReportEditorClient({
   );
   const savePublished = async (report: DailyReport) => {
     await flushDraft();
-    const expectedVersion = published?.version ?? 0;
+    // A recovered draft is based on the published version that was present
+    // when it was saved. Keep that CAS value until the user reviews a conflict.
+    const expectedVersion = draftBaseVersion.current;
     const savedDraftVersion = draftBaseVersion.current;
     setLoadState("loading");
     setError(null);
@@ -374,8 +385,17 @@ export function ReportEditorClient({
     });
     const payload = await readJson(response);
     if (response.status === 409) {
-      const current = (payload.currentReport ?? payload.report) as
+      let current = (payload.currentReport ?? payload.report) as
         DailyReport | undefined;
+      if (!current) {
+        const currentResponse = await fetch(`/api/reports/${report.reportDate}`, {
+          cache: "no-store",
+        });
+        const currentPayload = await readJson(currentResponse);
+        if (currentResponse.ok && currentPayload.report) {
+          current = currentPayload.report as DailyReport;
+        }
+      }
       if (current) setPublished(current);
       setLoadState("idle");
       setConflict(
