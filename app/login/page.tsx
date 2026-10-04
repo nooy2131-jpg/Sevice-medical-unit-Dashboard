@@ -2,9 +2,11 @@
 
 import { FormEvent, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { authClient } from '@/src/lib/auth-client';
 
 export default function LoginPage() {
+  const router = useRouter();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -16,7 +18,7 @@ export default function LoginPage() {
     setError(null);
     const result = await authClient.signIn.email({ email, password, callbackURL: '/' });
     if (result.error) setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือบัญชียังไม่ได้รับอนุญาต');
-    else window.location.assign('/');
+    else router.push('/');
     setBusy(false);
   }
 
