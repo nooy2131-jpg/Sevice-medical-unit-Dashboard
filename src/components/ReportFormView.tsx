@@ -1,12 +1,21 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { DailyReport, ReportsMap, TopItem, formatThaiDate, normalizeTopItems } from '../types/report';
 import { DISEASE_PRESETS, PROCEDURE_PRESETS } from '../data/seedReports';
-import { Calculator, Check, ChevronLeft, ChevronRight, History, RotateCcw, Trash2 } from 'lucide-react';
+import {
+  Calculator,
+  Check,
+  ChevronLeft,
+  ChevronRight,
+  History,
+  RefreshCw,
+  RotateCcw,
+  Trash2,
+} from 'lucide-react';
 
 interface ReportFormViewProps {
   reportsMap: ReportsMap;
   initialDate: string;
-  onSave: (report: DailyReport, originalDate?: string) => void;
+  onSave: (report: DailyReport, navigateToDashboard?: boolean) => void;
   onDelete: (dateStr: string) => void;
   onCancel: () => void;
 }
@@ -37,6 +46,14 @@ function padToFive(items: TopItem[]): TopItem[] {
   return result;
 }
 
+function getCurrentTimestamp(): string {
+  const now = new Date();
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(
+    now.getHours()
+  )}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+}
+
 export const ReportFormView: React.FC<ReportFormViewProps> = ({
   reportsMap,
   initialDate,
@@ -47,6 +64,8 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
   const [reportDate, setReportDate] = useState<string>(
     initialDate || new Date().toISOString().slice(0, 10)
   );
+
+  const [autoSumTotal, setAutoSumTotal] = useState<boolean>(true);
 
   const [numbers, setNumbers] = useState({
     totalMale: 0,
@@ -71,6 +90,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
   const [topProcedures, setTopProcedures] = useState<TopItem[]>(EMPTY_FIVE_ITEMS);
   const [reporterNote, setReporterNote] = useState<string>('');
   const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
+  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string>('');
 
   const savedDatesDesc = useMemo(
     () => Object.keys(reportsMap).sort((a, b) => b.localeCompare(a)),
@@ -85,8 +105,10 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
     }
   }, [initialDate]);
 
+  // Load record into form ONLY when switching reportDate
   useEffect(() => {
     setConfirmDelete(false);
+    setLastAutoSavedAt('');
     const rec = reportsMap[reportDate];
     if (rec) {
       setNumbers({
@@ -133,7 +155,71 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       setTopProcedures(EMPTY_FIVE_ITEMS());
       setReporterNote('');
     }
-  }, [reportDate, reportsMap]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reportDate]);
+
+  const buildReportPayload = (
+    nextNumbers: typeof numbers,
+    nextDiseases: TopItem[],
+    nextProcedures: TopItem[],
+    nextNote: string,
+    sortTopLists = false
+  ): DailyReport => {
+    const cleanedDiseases = nextDiseases
+      .filter((d) => d.name.trim().length > 0)
+      .map((d) => ({
+        name: d.name.trim(),
+        count: Number(d.count) || 0,
+        male: d.male || 0,
+        female: d.female || 0,
+      }));
+    if (sortTopLists) {
+      cleanedDiseases.sort((a, b) => b.count - a.count);
+    }
+
+    const cleanedProcedures = nextProcedures
+      .filter((p) => p.name.trim().length > 0)
+      .map((p) => ({
+        name: p.name.trim(),
+        count: Number(p.count) || 0,
+        male: p.male || 0,
+        female: p.female || 0,
+      }));
+    if (sortTopLists) {
+      cleanedProcedures.sort((a, b) => b.count - a.count);
+    }
+
+    const updatedAt = getCurrentTimestamp();
+    return {
+      reportDate,
+      ...nextNumbers,
+      topDiseases: cleanedDiseases,
+      topProcedures: cleanedProcedures,
+      reporterNote: nextNote.trim(),
+      updatedAt,
+    };
+  };
+
+  // Trigger immediate update if editing an existing date or if user modifies data
+  const triggerImmediateUpdate = (
+    nextNumbers: typeof numbers,
+    nextDiseases: TopItem[],
+    nextProcedures: TopItem[],
+    nextNote: string
+  ) => {
+    const hasAnyValue =
+      Boolean(reportsMap[reportDate]) ||
+      Object.values(nextNumbers).some((v) => v > 0) ||
+      nextDiseases.some((d) => d.name.trim().length > 0) ||
+      nextProcedures.some((p) => p.name.trim().length > 0) ||
+      nextNote.trim().length > 0;
+
+    if (hasAnyValue && reportDate) {
+      const payload = buildReportPayload(nextNumbers, nextDiseases, nextProcedures, nextNote, false);
+      onSave(payload, false);
+      setLastAutoSavedAt(payload.updatedAt);
+    }
+  };
 
   const shiftDateByDays = (deltaDays: number) => {
     const d = new Date(reportDate + 'T00:00:00');
@@ -144,31 +230,46 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
 
   const handleNumberChange = (field: keyof typeof numbers, value: string) => {
     const parsed = Math.max(0, parseInt(value, 10) || 0);
-    setNumbers((prev) => ({ ...prev, [field]: parsed }));
+    setNumbers((prev) => {
+      const next = { ...prev, [field]: parsed };
+      // If autoSumTotal is enabled and the user edited one of the service department fields, automatically recalculate totalMale / totalFemale
+      if (autoSumTotal && field !== 'totalMale' && field !== 'totalFemale') {
+        next.totalMale =
+          next.thaiMale + next.genMale + next.procMale + next.refillMale + next.referDocMale;
+        next.totalFemale =
+          next.thaiFemale +
+          next.genFemale +
+          next.procFemale +
+          next.refillFemale +
+          next.referDocFemale;
+      }
+      triggerImmediateUpdate(next, topDiseases, topProcedures, reporterNote);
+      return next;
+    });
   };
 
   const handleAutoSumFromServices = () => {
-    const sumMale =
-      numbers.thaiMale +
-      numbers.genMale +
-      numbers.procMale +
-      numbers.refillMale +
-      numbers.referDocMale;
-    const sumFemale =
-      numbers.thaiFemale +
-      numbers.genFemale +
-      numbers.procFemale +
-      numbers.refillFemale +
-      numbers.referDocFemale;
-    setNumbers((prev) => ({
-      ...prev,
-      totalMale: sumMale,
-      totalFemale: sumFemale,
-    }));
+    setNumbers((prev) => {
+      const sumMale =
+        prev.thaiMale + prev.genMale + prev.procMale + prev.refillMale + prev.referDocMale;
+      const sumFemale =
+        prev.thaiFemale +
+        prev.genFemale +
+        prev.procFemale +
+        prev.refillFemale +
+        prev.referDocFemale;
+      const next = {
+        ...prev,
+        totalMale: sumMale,
+        totalFemale: sumFemale,
+      };
+      triggerImmediateUpdate(next, topDiseases, topProcedures, reporterNote);
+      return next;
+    });
   };
 
   const handleResetForm = () => {
-    setNumbers({
+    const zeroed = {
       totalMale: 0,
       totalFemale: 0,
       thaiMale: 0,
@@ -185,10 +286,16 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       admitFemale: 0,
       referOutMale: 0,
       referOutFemale: 0,
-    });
-    setTopDiseases(EMPTY_FIVE_ITEMS());
-    setTopProcedures(EMPTY_FIVE_ITEMS());
+    };
+    const emptyDis = EMPTY_FIVE_ITEMS();
+    const emptyProc = EMPTY_FIVE_ITEMS();
+    setNumbers(zeroed);
+    setTopDiseases(emptyDis);
+    setTopProcedures(emptyProc);
     setReporterNote('');
+    if (reportsMap[reportDate]) {
+      triggerImmediateUpdate(zeroed, emptyDis, emptyProc, '');
+    }
   };
 
   const updateTopItem = (
@@ -197,70 +304,63 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
     key: keyof TopItem,
     val: string | number
   ) => {
-    const setter = type === 'disease' ? setTopDiseases : setTopProcedures;
-    setter((prev) => {
-      const next = [...prev];
-      const item = { ...next[index] };
-      if (key === 'name') {
-        item.name = String(val);
-      } else {
-        const num = Math.max(0, Number(val) || 0);
-        item[key] = num;
-        if (key === 'male' || key === 'female') {
-          const m = key === 'male' ? num : item.male || 0;
-          const f = key === 'female' ? num : item.female || 0;
-          item.count = m + f;
+    if (type === 'disease') {
+      setTopDiseases((prev) => {
+        const next = [...prev];
+        const item = { ...next[index] };
+        if (key === 'name') {
+          item.name = String(val);
+        } else {
+          const num = Math.max(0, Number(val) || 0);
+          item[key] = num;
+          if (key === 'male' || key === 'female') {
+            const m = key === 'male' ? num : item.male || 0;
+            const f = key === 'female' ? num : item.female || 0;
+            item.count = m + f;
+          }
         }
-      }
-      next[index] = item;
-      return next;
-    });
+        next[index] = item;
+        triggerImmediateUpdate(numbers, next, topProcedures, reporterNote);
+        return next;
+      });
+    } else {
+      setTopProcedures((prev) => {
+        const next = [...prev];
+        const item = { ...next[index] };
+        if (key === 'name') {
+          item.name = String(val);
+        } else {
+          const num = Math.max(0, Number(val) || 0);
+          item[key] = num;
+          if (key === 'male' || key === 'female') {
+            const m = key === 'male' ? num : item.male || 0;
+            const f = key === 'female' ? num : item.female || 0;
+            item.count = m + f;
+          }
+        }
+        next[index] = item;
+        triggerImmediateUpdate(numbers, topDiseases, next, reporterNote);
+        return next;
+      });
+    }
+  };
+
+  const handleNoteChange = (val: string) => {
+    setReporterNote(val);
+    triggerImmediateUpdate(numbers, topDiseases, topProcedures, val);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!reportDate) return;
-
-    const cleanedDiseases = topDiseases
-      .filter((d) => d.name.trim().length > 0)
-      .map((d) => ({
-        name: d.name.trim(),
-        count: Number(d.count) || 0,
-        male: d.male || 0,
-        female: d.female || 0,
-      }))
-      .sort((a, b) => b.count - a.count);
-
-    const cleanedProcedures = topProcedures
-      .filter((p) => p.name.trim().length > 0)
-      .map((p) => ({
-        name: p.name.trim(),
-        count: Number(p.count) || 0,
-        male: p.male || 0,
-        female: p.female || 0,
-      }))
-      .sort((a, b) => b.count - a.count);
-
-    const now = new Date();
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const updatedAt = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(
-      now.getHours()
-    )}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
-
-    onSave({
-      reportDate,
-      ...numbers,
-      topDiseases: cleanedDiseases,
-      topProcedures: cleanedProcedures,
-      reporterNote: reporterNote.trim(),
-      updatedAt,
-    });
+    const payload = buildReportPayload(numbers, topDiseases, topProcedures, reporterNote, true);
+    onSave(payload, true);
   };
 
   const metricGroups = [
     {
       title: '1. ผู้รับบริการทั้งหมด',
-      subtitle: 'ยอดรวมผู้มารับบริการทั้งหมดประจำวัน',
+      subtitle: 'ยอดรวมผู้มารับบริการทั้งหมดประจำวัน (คำนวณอัตโนมัติหรือแก้ไขเองได้)',
       mKey: 'totalMale' as const,
       fKey: 'totalFemale' as const,
     },
@@ -313,14 +413,23 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       {/* Header Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
             <span>หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์</span>
             <span aria-hidden="true">·</span>
             <span>
               {existingRecord
-                ? `กำลังแก้ไขข้อมูลย้อนหลังของวันที่ ${formatThaiDate(reportDate, true)}`
+                ? `กำลังแก้ไขข้อมูลของวันที่ ${formatThaiDate(reportDate, true)}`
                 : `สร้างรายงานใหม่สำหรับวันที่ ${formatThaiDate(reportDate, true)}`}
             </span>
+            {(lastAutoSavedAt || existingRecord?.updatedAt) && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span className="inline-flex items-center gap-1 text-teal-700 font-medium tabular-nums">
+                  <RefreshCw className="w-3 h-3" />
+                  อัปเดตล่าสุด: {lastAutoSavedAt || existingRecord?.updatedAt}
+                </span>
+              </>
+            )}
           </div>
           <h1 className="text-2xl font-bold text-slate-900 mt-1">
             บันทึกข้อมูลประจำวัน / แก้ไขข้อมูลย้อนหลัง
@@ -348,7 +457,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
               <span>เลือกวันที่ต้องการบันทึก หรือแก้ไขข้อมูลย้อนหลัง</span>
             </div>
             <p className="text-xs text-slate-500">
-              สามารถเลือกวันที่ย้อนหลังวันใดก็ได้ หากวันที่เลือกมีข้อมูลอยู่แล้ว ระบบจะดึงข้อมูลเดิมขึ้นมาให้แก้ไขและบันทึกทับได้ทันที
+              ทุกครั้งที่มีการแก้ไขตัวเลขหรือข้อความ ระบบจะอัปเดตข้อมูลและคำนวณสถิติใหม่ให้อัตโนมัติทันที
             </p>
           </div>
 
@@ -418,9 +527,19 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
 
       {/* Quick Helper Bar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
-        <div className="text-xs text-slate-600">
-          <strong className="text-slate-900">ตัวช่วยคำนวณอัตโนมัติ:</strong> กรอกยอดแยกตามแผนกบริการ (ข้อ 2–6: แพทย์แผนไทย, ตรวจโรคทั่วไป, หัตถการ, รับยาเดิม, ขอใบส่งตัว) แล้วกดปุ่มเพื่อรวมเป็นยอดผู้รับบริการทั้งหมดได้ทันที
-        </div>
+        <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={autoSumTotal}
+            onChange={(e) => setAutoSumTotal(e.target.checked)}
+            className="rounded border-slate-300 text-teal-600 focus:ring-teal-600"
+          />
+          <span>
+            <strong className="text-slate-900">อัปเดตยอดรวมผู้รับบริการทั้งหมดอัตโนมัติ</strong>{' '}
+            เมื่อแก้ไขตัวเลขในแผนกบริการ (ข้อ 2–6)
+          </span>
+        </label>
+
         <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
@@ -428,7 +547,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap"
           >
             <Calculator className="w-3.5 h-3.5" />
-            รวมยอดข้อ 2–6 เป็นผู้รับบริการทั้งหมด
+            คำนวณรวมยอดข้อ 2–6 ทันที
           </button>
         </div>
       </div>
@@ -618,7 +737,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
             ))}
           </div>
           <div className="mt-3 text-[11px] text-slate-400">
-            หมายเหตุ: ระบบจะเรียงลำดับจากจำนวนมากไปน้อยให้อัตโนมัติเมื่อกดบันทึกข้อมูล
+            หมายเหตุ: ระบบจะเรียงลำดับจากจำนวนมากไปน้อยให้อัตโนมัติเมื่อกดยืนยันบันทึกข้อมูล
           </div>
         </div>
       </div>
@@ -634,7 +753,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
             rows={3}
             placeholder="ระบุรายละเอียดเพิ่มเติม เช่น สภาพความหนาแน่นของผู้รับบริการ การส่งต่อผู้ป่วยฉุกเฉิน หรือปัญหาที่พบในเวร..."
             value={reporterNote}
-            onChange={(e) => setReporterNote(e.target.value)}
+            onChange={(e) => handleNoteChange(e.target.value)}
             className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
           />
         </div>
@@ -681,14 +800,14 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
               onClick={onCancel}
               className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
             >
-              กลับหน้าภาพรวม
+              ดูผลลัพธ์ในหน้าภาพรวม
             </button>
             <button
               type="submit"
               className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors"
             >
               <Check className="w-4 h-4" />
-              {existingRecord ? 'บันทึกการแก้ไขข้อมูลย้อนหลัง' : 'บันทึกข้อมูลรายงานประจำวัน'}
+              {existingRecord ? 'ยืนยันการอัปเดตข้อมูลและกลับหน้าภาพรวม' : 'บันทึกข้อมูลรายงานประจำวัน'}
             </button>
           </div>
         </div>

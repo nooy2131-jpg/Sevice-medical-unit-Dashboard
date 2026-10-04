@@ -38,13 +38,31 @@ export default function App() {
     null
   );
 
+  // Sync across browser tabs if edited in another tab
   useEffect(() => {
+    const handleStorage = (e: StorageEvent) => {
+      if (e.key === STORAGE_KEY && e.newValue) {
+        try {
+          const parsed = JSON.parse(e.newValue);
+          if (parsed && typeof parsed === 'object') {
+            setReportsMap(parsed);
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      }
+    };
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  const persistReportsMap = (nextMap: ReportsMap) => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(reportsMap));
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextMap));
     } catch {
       // Ignore storage errors
     }
-  }, [reportsMap]);
+  };
 
   const showToast = (text: string, isError = false) => {
     setStatusMessage({ text, isError });
@@ -55,24 +73,32 @@ export default function App() {
 
   const reportsList = useMemo(() => Object.values(reportsMap), [reportsMap]);
 
-  const handleSaveReport = (report: DailyReport) => {
+  const handleSaveReport = (report: DailyReport, navigateToDashboard = true) => {
     const isUpdate = Boolean(reportsMap[report.reportDate]);
-    setReportsMap((prev) => ({
-      ...prev,
-      [report.reportDate]: report,
-    }));
-    showToast(
-      isUpdate
-        ? `อัปเดตข้อมูลย้อนหลังของวันที่ ${report.reportDate} เรียบร้อยแล้ว`
-        : `บันทึกข้อมูลรายงานประจำวันที่ ${report.reportDate} เรียบร้อยแล้ว`
-    );
-    setActiveTab('dashboard');
+    setReportsMap((prev) => {
+      const next = {
+        ...prev,
+        [report.reportDate]: report,
+      };
+      persistReportsMap(next);
+      return next;
+    });
+
+    if (navigateToDashboard) {
+      showToast(
+        isUpdate
+          ? `อัปเดตข้อมูลของวันที่ ${report.reportDate} เรียบร้อยแล้ว`
+          : `บันทึกข้อมูลรายงานประจำวันที่ ${report.reportDate} เรียบร้อยแล้ว`
+      );
+      setActiveTab('dashboard');
+    }
   };
 
   const handleDeleteReport = (dateStr: string) => {
     setReportsMap((prev) => {
       const next = { ...prev };
       delete next[dateStr];
+      persistReportsMap(next);
       return next;
     });
     showToast(`ลบข้อมูลรายงานของวันที่ ${dateStr} ออกจากระบบแล้ว`);
@@ -174,9 +200,10 @@ export default function App() {
           next[item.reportDate] = item;
         }
       }
+      persistReportsMap(next);
       return next;
     });
-    showToast(`นำเข้าข้อมูลสำเร็จจำนวน ${imported.length} วันทำการ`);
+    showToast(`นำเข้าและอัปเดตข้อมูลสำเร็จจำนวน ${imported.length} วันทำการ`);
   };
 
   return (

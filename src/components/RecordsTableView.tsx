@@ -22,10 +22,15 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'total-desc'>('date-desc');
   const [deletingDate, setDeletingDate] = useState<string | null>(null);
-  const [inspectReport, setInspectReport] = useState<DailyReport | null>(null);
+  const [inspectDate, setInspectDate] = useState<string | null>(null);
   const [showImportModal, setShowImportModal] = useState<boolean>(false);
   const [importText, setImportText] = useState<string>('');
   const [importError, setImportError] = useState<string>('');
+
+  const inspectReport = useMemo(
+    () => (inspectDate ? reports.find((r) => r.reportDate === inspectDate) || null : null),
+    [inspectDate, reports]
+  );
 
   const filteredAndSorted = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
@@ -209,7 +214,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                 <th className="py-3 px-3 text-right whitespace-nowrap">รับยาเดิม</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">ใบส่งตัว</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">Admit / Refer</th>
-                <th className="py-3 px-4 whitespace-nowrap">โรคอันดับ 1 · หมายเหตุ</th>
+                <th className="py-3 px-4 whitespace-nowrap">โรคอันดับ 1 · อัปเดตล่าสุด</th>
                 <th className="py-3 px-4 text-right whitespace-nowrap">จัดการข้อมูลย้อนหลัง</th>
               </tr>
             </thead>
@@ -303,8 +308,8 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                             {topDis.name} ({topDis.count})
                           </div>
                         )}
-                        <div className="text-slate-500 truncate" title={r.reporterNote}>
-                          {r.reporterNote || '-'}
+                        <div className="text-slate-500 truncate tabular-nums" title={r.reporterNote}>
+                          {r.updatedAt ? `อัปเดต ${r.updatedAt}` : r.reporterNote || '-'}
                         </div>
                       </td>
 
@@ -333,7 +338,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                           <div className="inline-flex items-center gap-1.5">
                             <button
                               type="button"
-                              onClick={() => setInspectReport(r)}
+                              onClick={() => setInspectDate(r.reportDate)}
                               title="ดูรายละเอียด"
                               className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
                             >
@@ -383,7 +388,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
               </div>
               <button
                 type="button"
-                onClick={() => setInspectReport(null)}
+                onClick={() => setInspectDate(null)}
                 className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
               >
                 <X className="w-5 h-5" />
@@ -484,7 +489,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                 type="button"
                 onClick={() => {
                   const d = inspectReport.reportDate;
-                  setInspectReport(null);
+                  setInspectDate(null);
                   onEditDate(d);
                 }}
                 className="px-4 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg hover:bg-teal-700"
@@ -493,7 +498,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
               </button>
               <button
                 type="button"
-                onClick={() => setInspectReport(null)}
+                onClick={() => setInspectDate(null)}
                 className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-medium rounded-lg hover:bg-slate-50"
               >
                 ปิดหน้าต่าง
