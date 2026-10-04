@@ -4,10 +4,12 @@ import { useMemo, useState } from "react";
 import { Download, Eye, Search, Trash2, Upload, X } from "lucide-react";
 import {
   DailyReport,
+  formatBangkokTimestamp,
   formatThaiDate,
   normalizeTopItems,
 } from "../types/report";
 import { parseReportsImport } from "../lib/csv";
+import { validateReport } from "../lib/report-validation";
 
 export interface ImportPreview {
   rows: DailyReport[];
@@ -20,8 +22,8 @@ export interface RecordsTableViewProps {
   onEditDate: (date: string) => void;
   onDeleteDate: (date: string) => Promise<void>;
   onExportCsv: () => Promise<void> | void;
-  onImportText?: (
-    text: string,
+  onImportRows?: (
+    rows: DailyReport[],
     duplicateMode: "skip" | "overwrite",
     expectedVersions: Record<string, number>,
   ) => Promise<void>;
@@ -60,37 +62,43 @@ function parsePreview(text: string, existing: DailyReport[]): ImportPreview {
     )
       duplicateDates.push(reportDate);
     const value = (key: string) => Math.max(0, Number(cells[key]) || 0);
-    rows.push({
-      reportDate,
-      totalMale: value("totalMale"),
-      totalFemale: value("totalFemale"),
-      thaiMale: value("thaiMale"),
-      thaiFemale: value("thaiFemale"),
-      genMale: value("genMale"),
-      genFemale: value("genFemale"),
-      procMale: value("procMale"),
-      procFemale: value("procFemale"),
-      refillMale: value("refillMale"),
-      refillFemale: value("refillFemale"),
-      referDocMale: value("referDocMale"),
-      referDocFemale: value("referDocFemale"),
-      admitMale: value("admitMale"),
-      admitFemale: value("admitFemale"),
-      referOutMale: value("referOutMale"),
-      referOutFemale: value("referOutFemale"),
-      topDiseases: Array.isArray(cells.topDiseases)
-        ? (cells.topDiseases as DailyReport["topDiseases"])
-        : [],
-      topProcedures: Array.isArray(cells.topProcedures)
-        ? (cells.topProcedures as DailyReport["topProcedures"])
-        : [],
-      reporterNote:
-        typeof cells.reporterNote === "string" ? cells.reporterNote : "",
-      updatedAt:
-        typeof cells.updatedAt === "string"
-          ? cells.updatedAt
-          : new Date().toISOString(),
-    });
+    try {
+      rows.push(
+        validateReport({
+          reportDate,
+          totalMale: value("totalMale"),
+          totalFemale: value("totalFemale"),
+          thaiMale: value("thaiMale"),
+          thaiFemale: value("thaiFemale"),
+          genMale: value("genMale"),
+          genFemale: value("genFemale"),
+          procMale: value("procMale"),
+          procFemale: value("procFemale"),
+          refillMale: value("refillMale"),
+          refillFemale: value("refillFemale"),
+          referDocMale: value("referDocMale"),
+          referDocFemale: value("referDocFemale"),
+          admitMale: value("admitMale"),
+          admitFemale: value("admitFemale"),
+          referOutMale: value("referOutMale"),
+          referOutFemale: value("referOutFemale"),
+          topDiseases: Array.isArray(cells.topDiseases)
+            ? cells.topDiseases
+            : [],
+          topProcedures: Array.isArray(cells.topProcedures)
+            ? cells.topProcedures
+            : [],
+          reporterNote:
+            typeof cells.reporterNote === "string" ? cells.reporterNote : "",
+          updatedAt:
+            typeof cells.updatedAt === "string"
+              ? cells.updatedAt
+              : new Date().toISOString(),
+        }) as DailyReport,
+      );
+    } catch {
+      invalidRows += 1;
+    }
   }
   return { rows, invalidRows, duplicateDates: [...new Set(duplicateDates)] };
 }
@@ -101,7 +109,7 @@ export function RecordsTableView({
   onEditDate,
   onDeleteDate,
   onExportCsv,
-  onImportText,
+  onImportRows,
 }: RecordsTableViewProps) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<"date-desc" | "date-asc" | "total-desc">(
@@ -109,7 +117,6 @@ export function RecordsTableView({
   );
   const [inspectDate, setInspectDate] = useState<string | null>(null);
   const [deleteDate, setDeleteDate] = useState<string | null>(null);
-  const [importText, setImportText] = useState("");
   const [importPreview, setImportPreview] = useState<ImportPreview | null>(
     null,
   );
@@ -148,14 +155,22 @@ export function RecordsTableView({
     ? reports.find((report) => report.reportDate === inspectDate)
     : null;
   const openImport = (value: string) => {
-    setImportText(value);
     setImportError(null);
     setImportPreview(value.trim() ? parsePreview(value, reports) : null);
   };
   const submitImport = async () => {
-    if (!importPreview || !onImportText) return;
+    if (!importPreview || !onImportRows) return;
     if (!importPreview.rows.length) {
       setImportError("ไม่พบแถวที่นำเข้าได้");
+      return;
+    }
+    if (importPreview.invalidRows > 0) {
+      setImportError("ไฟล์มีแถวไม่ถูกต้อง กรุณาแก้ไขไฟล์ก่อนนำเข้า");
+      return;
+    }
+    const dates = importPreview.rows.map((row) => row.reportDate);
+    if (new Set(dates).size !== dates.length) {
+      setImportError("ไฟล์มีวันที่ซ้ำกันภายในไฟล์ กรุณาแก้ไขก่อนนำเข้า");
       return;
     }
     const expectedVersions = Object.fromEntries(
@@ -168,8 +183,7 @@ export function RecordsTableView({
           : [[row.reportDate, current.version]];
       }),
     );
-    await onImportText(importText, duplicateMode, expectedVersions);
-    setImportText("");
+    await onImportRows(importPreview.rows, duplicateMode, expectedVersions);
     setImportPreview(null);
   };
   return (
@@ -215,7 +229,7 @@ export function RecordsTableView({
             <Download className="h-4 w-4" />
             ส่งออก CSV
           </button>
-          {isAdmin && onImportText && (
+          {isAdmin && onImportRows && (
             <label className="control-button cursor-pointer">
               <Upload className="h-4 w-4" />
               นำเข้า CSV
@@ -290,7 +304,7 @@ export function RecordsTableView({
                         {report.lastEditor?.name ?? report.updatedBy ?? "—"}
                       </span>
                       <span className="font-mono tabular-nums">
-                        {report.updatedAt}
+                        {formatBangkokTimestamp(report.updatedAt)}
                       </span>
                     </td>
                     <td className="px-4 py-3">
@@ -348,7 +362,7 @@ export function RecordsTableView({
                 <p className="mt-1 text-sm text-slate-500">
                   อัปเดตโดย{" "}
                   {inspect.lastEditor?.name ?? inspect.updatedBy ?? "ไม่ระบุ"} ·{" "}
-                  {inspect.updatedAt}
+                  {formatBangkokTimestamp(inspect.updatedAt)}
                 </p>
               </div>
               <button

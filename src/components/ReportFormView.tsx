@@ -9,10 +9,12 @@ import {
   Trash2,
 } from "lucide-react";
 import { DISEASE_PRESETS, PROCEDURE_PRESETS } from "../data/seedReports";
+import { shiftDate } from "../lib/dates";
 import {
   DailyReport,
   ReportSaveState,
   TopItem,
+  formatBangkokTimestamp,
   formatThaiDate,
   normalizeTopItems,
 } from "../types/report";
@@ -43,6 +45,8 @@ export interface ReportFormViewProps {
   canDelete?: boolean;
   saveState?: ReportSaveState;
   errorMessage?: string | null;
+  publishErrorMessage?: string | null;
+  isPublishing?: boolean;
   conflictMessage?: string | null;
   onDateChange?: (date: string) => void;
   onSave: (report: DailyReport) => Promise<void>;
@@ -198,6 +202,8 @@ export function ReportFormView({
   canDelete = false,
   saveState = "idle",
   errorMessage,
+  publishErrorMessage,
+  isPublishing = false,
   conflictMessage,
   onDateChange,
   onSave,
@@ -297,14 +303,9 @@ export function ReportFormView({
     setNote("");
     emitDraft(numbersNext, diseasesNext, proceduresNext, "");
   };
-  const shiftDate = async (delta: number) => {
+  const moveDateByDays = async (delta: number) => {
     await onDraftFlush?.();
-    const [year, month, day] = reportDate.split("-").map(Number);
-    onDateChange?.(
-      new Date(Date.UTC(year, month - 1, day + delta))
-        .toISOString()
-        .slice(0, 10),
-    );
+    onDateChange?.(shiftDate(reportDate, delta));
   };
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -342,7 +343,7 @@ export function ReportFormView({
           </h1>
           <p className="mt-2 text-xs text-slate-600">
             {publishedReport
-              ? `เผยแพร่แล้ว · เวอร์ชัน ${publishedReport.version ?? "—"} · อัปเดต ${publishedReport.updatedAt}`
+              ? `เผยแพร่แล้ว · เวอร์ชัน ${publishedReport.version ?? "—"} · อัปเดต ${formatBangkokTimestamp(publishedReport.updatedAt)}`
               : "ยังไม่มีรายงานที่เผยแพร่สำหรับวันนี้"}
           </p>
         </div>
@@ -361,6 +362,14 @@ export function ReportFormView({
           {conflictMessage}
         </div>
       )}
+      {publishErrorMessage && (
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"
+        >
+          บันทึกรายงานที่เผยแพร่ไม่สำเร็จ: {publishErrorMessage}
+        </div>
+      )}
       <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -374,7 +383,7 @@ export function ReportFormView({
           <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => void shiftDate(-1)}
+              onClick={() => void moveDateByDays(-1)}
               className="control-button"
               aria-label="วันก่อนหน้า"
             >
@@ -388,8 +397,8 @@ export function ReportFormView({
               id="report-date"
               type="date"
               value={reportDate}
-              onChange={(event) => {
-                void onDraftFlush?.();
+              onChange={async (event) => {
+                await onDraftFlush?.();
                 onDateChange?.(event.target.value);
               }}
               className="control-input font-mono tabular-nums"
@@ -397,7 +406,7 @@ export function ReportFormView({
             />
             <button
               type="button"
-              onClick={() => void shiftDate(1)}
+              onClick={() => void moveDateByDays(1)}
               className="control-button"
               aria-label="วันถัดไป"
             >
@@ -507,7 +516,7 @@ export function ReportFormView({
                   <span className="pb-2 font-mono text-xs text-slate-500">
                     #{index + 1}
                   </span>
-                  <label className="field-label">
+                  <label className="field-label col-start-2 sm:col-auto">
                     ชื่อ{kind === "disease" ? "โรค" : "หัตถการ"}
                     <input
                       type="text"
@@ -519,7 +528,7 @@ export function ReportFormView({
                       className="control-input mt-1 w-full text-sm"
                     />
                   </label>
-                  <label className="field-label">
+                  <label className="field-label col-start-2 sm:col-auto">
                     ชาย
                     <input
                       type="number"
@@ -531,7 +540,7 @@ export function ReportFormView({
                       className="control-input mt-1 w-full font-mono"
                     />
                   </label>
-                  <label className="field-label">
+                  <label className="field-label col-start-2 sm:col-auto">
                     หญิง
                     <input
                       type="number"
@@ -543,7 +552,7 @@ export function ReportFormView({
                       className="control-input mt-1 w-full font-mono"
                     />
                   </label>
-                  <label className="field-label">
+                  <label className="field-label col-start-2 sm:col-auto">
                     รวม
                     <input
                       type="number"
@@ -616,13 +625,13 @@ export function ReportFormView({
           <div className="flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
-              onClick={() => {
-                void onDraftFlush?.();
+              onClick={async () => {
+                await onDraftFlush?.();
                 onCancel?.();
               }}
               className="control-button justify-center"
             >
-              ยกเลิก
+              กลับภาพรวม (เก็บฉบับร่าง)
             </button>
             <button
               type="button"
@@ -634,13 +643,15 @@ export function ReportFormView({
             </button>
             <button
               type="submit"
-              disabled={saveState === "saving" || saveState === "loading"}
+              disabled={
+                isPublishing ||
+                saveState === "saving" ||
+                saveState === "loading"
+              }
               className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-teal-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
             >
               <Check className="h-4 w-4" />
-              {saveState === "saving"
-                ? "กำลังบันทึก…"
-                : "บันทึกรายงานที่เผยแพร่"}
+              {isPublishing ? "กำลังบันทึก…" : "บันทึกรายงานที่เผยแพร่"}
             </button>
           </div>
         </div>

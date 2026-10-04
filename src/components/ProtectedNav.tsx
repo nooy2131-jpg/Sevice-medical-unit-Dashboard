@@ -39,6 +39,24 @@ export function ProtectedNav({ user }: { user: User }) {
           </Link>
         ))}
       </nav>
+      <nav
+        className="flex max-w-[48vw] items-center gap-3 overflow-x-auto whitespace-nowrap text-xs font-semibold text-slate-600 sm:hidden"
+        aria-label="เมนูหลักบนมือถือ"
+      >
+        {links.map((link) => (
+          <Link
+            key={link.href}
+            href={link.href}
+            className={
+              pathname.startsWith(link.href)
+                ? "text-teal-700"
+                : "hover:text-slate-950"
+            }
+          >
+            {link.label}
+          </Link>
+        ))}
+      </nav>
       <div className="hidden text-right sm:block">
         <p className="text-xs font-semibold text-slate-900">
           {user.name ?? user.email ?? "ผู้ใช้งาน"}

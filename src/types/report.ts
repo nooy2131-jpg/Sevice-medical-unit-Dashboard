@@ -42,11 +42,13 @@ export type ReportSaveState =
   "idle" | "loading" | "saving" | "saved" | "error" | "conflict";
 
 export interface ReportDraftResponse {
-  draft?: DailyReport | null;
-  data?: DailyReport | null;
+  draft?: {
+    data: DailyReport;
+    expectedVersion: number;
+    revision: number;
+    updatedAt: string;
+  } | null;
   expectedVersion?: number;
-  version?: number;
-  updatedAt?: string;
 }
 
 export type ReportsMap = Record<string, DailyReport>;
@@ -121,4 +123,14 @@ export function formatThaiDate(dateStr: string, short = false): string {
   ];
   const mName = short ? monthsShort[month] : monthsFull[month];
   return `${day} ${mName} ${thaiYear}`;
+}
+
+export function formatBangkokTimestamp(value: string): string {
+  const timestamp = new Date(value);
+  if (Number.isNaN(timestamp.getTime())) return value || "-";
+  return new Intl.DateTimeFormat("th-TH", {
+    timeZone: "Asia/Bangkok",
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(timestamp);
 }

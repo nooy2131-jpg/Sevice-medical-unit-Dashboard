@@ -12,7 +12,7 @@ import {
   ReportDraftResponse,
   ReportSaveState,
 } from "../types/report";
-import { exportReportsCsv, parseReportsImport } from "../lib/csv";
+import { exportReportsCsv } from "../lib/csv";
 
 type UserRole = "admin" | "member";
 
@@ -168,25 +168,16 @@ export function ReportsRecordsClient({ role }: { role: UserRole }) {
       previous.filter((report) => report.reportDate !== date),
     );
   };
-  const importText = async (
-    text: string,
+  const importRows = async (
+    rows: DailyReport[],
     duplicateMode: "skip" | "overwrite",
     expectedVersions: Record<string, number>,
   ) => {
-    let parsed: unknown[];
-    try {
-      parsed = parseReportsImport(text);
-    } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "ไฟล์นำเข้าไม่ถูกต้อง",
-      );
-      return;
-    }
     const response = await fetch("/api/reports/import", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        reports: parsed,
+        reports: rows,
         mode: duplicateMode,
         expectedVersions,
       }),
@@ -229,7 +220,7 @@ export function ReportsRecordsClient({ role }: { role: UserRole }) {
       }}
       onDeleteDate={deleteReport}
       onExportCsv={exportCsv}
-      onImportText={role === "admin" ? importText : undefined}
+      onImportRows={role === "admin" ? importRows : undefined}
     />
   );
 }
@@ -248,8 +239,11 @@ export function ReportEditorClient({
   const [loadState, setLoadState] = useState<ReportSaveState>("loading");
   const [draftState, setDraftState] = useState<ReportSaveState>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [publishError, setPublishError] = useState<string | null>(null);
+  const [publishing, setPublishing] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
   const draftBaseVersion = useRef(0);
+  const draftRevision = useRef(0);
   const latestDraft = useRef<DailyReport | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savePromise = useRef<Promise<void> | null>(null);
@@ -268,23 +262,15 @@ export function ReportEditorClient({
       const draftResponse = await fetch(`/api/drafts/${date}`, {
         cache: "no-store",
       });
+      if (!draftResponse.ok && draftResponse.status !== 404) {
+        const draftError = await readJson(draftResponse);
+        throw new Error(getError(draftError, "ไม่สามารถโหลดฉบับร่างได้"));
+      }
       const draftPayload = (await readJson(
         draftResponse,
       )) as ReportDraftResponse;
-      const draftRecord = draftPayload.draft as unknown;
-      const draftValue =
-        draftRecord &&
-        typeof draftRecord === "object" &&
-        !Array.isArray(draftRecord)
-          ? (draftRecord as { data?: DailyReport; expectedVersion?: number })
-              .data
-            ? {
-                ...(draftRecord as { data: DailyReport }).data,
-                version: (draftRecord as { expectedVersion?: number })
-                  .expectedVersion,
-              }
-            : null
-          : (draftPayload.data as DailyReport | null | undefined);
+      const draftRecord = draftPayload.draft;
+      const draftValue = draftRecord?.data ?? null;
       const reportResponse = await fetch("/api/reports", { cache: "no-store" });
       const reportPayload = await readJson(reportResponse);
       if (!reportResponse.ok)
@@ -296,12 +282,8 @@ export function ReportEditorClient({
         : null;
       if (loadedKey.current !== key) return;
       draftBaseVersion.current =
-        draftRecord &&
-        typeof draftRecord === "object" &&
-        typeof (draftRecord as { expectedVersion?: unknown })
-          .expectedVersion === "number"
-          ? (draftRecord as { expectedVersion: number }).expectedVersion
-          : (found?.version ?? 0);
+        draftRecord?.expectedVersion ?? found?.version ?? 0;
+      draftRevision.current = draftRecord?.revision ?? 0;
       setPublished(found);
       setDraft(draftValue ?? null);
       latestDraft.current = draftValue ?? null;
@@ -319,51 +301,62 @@ export function ReportEditorClient({
     void loadDate(reportDate);
   }, [loadDate, reportDate]);
 
-  const persistDraft = useCallback(async (value: DailyReport | null) => {
-    if (!value) return;
-    setDraftState("saving");
-    setError(null);
-    const response = await fetch(`/api/drafts/${value.reportDate}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        data: value,
-        expectedVersion: draftBaseVersion.current,
-      }),
+  const persistLatestDraft = useCallback(async () => {
+    if (savePromise.current) return savePromise.current;
+    const run = (async () => {
+      while (latestDraft.current) {
+        const value = latestDraft.current;
+        const expectedDraftRevision = draftRevision.current;
+        setDraftState("saving");
+        setError(null);
+        const response = await fetch(`/api/drafts/${value.reportDate}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            data: value,
+            expectedVersion: draftBaseVersion.current,
+            expectedDraftRevision,
+          }),
+        });
+        const payload = await readJson(response);
+        if (!response.ok) {
+          setDraftState("error");
+          setError(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
+          throw new Error(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
+        }
+        const savedDraft = payload.draft as { revision?: unknown } | undefined;
+        if (typeof savedDraft?.revision === "number")
+          draftRevision.current = savedDraft.revision;
+        if (latestDraft.current === value) {
+          latestDraft.current = null;
+          setDraftState("saved");
+        }
+      }
+    })();
+    savePromise.current = run.finally(() => {
+      savePromise.current = null;
     });
-    const payload = await readJson(response);
-    if (!response.ok) {
-      setDraftState("error");
-      setError(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
-      throw new Error(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
-    }
-    setDraftState("saved");
+    return savePromise.current;
   }, []);
   const scheduleDraft = (value: DailyReport) => {
-    if (!latestDraft.current)
+    if (!draft && !latestDraft.current)
       draftBaseVersion.current = published?.version ?? 0;
     latestDraft.current = value;
     setDraft(value);
     setDraftState("saving");
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
-      const pending = latestDraft.current;
-      savePromise.current = persistDraft(pending).finally(() => {
-        savePromise.current = null;
-      });
+      void persistLatestDraft();
     }, 650);
   };
   const flushDraft = useCallback(async () => {
     if (draftTimer.current) {
       clearTimeout(draftTimer.current);
       draftTimer.current = null;
-      const pending = latestDraft.current;
-      savePromise.current = persistDraft(pending).finally(() => {
-        savePromise.current = null;
-      });
+      void persistLatestDraft();
     }
     if (savePromise.current) await savePromise.current;
-  }, [persistDraft]);
+  }, [persistLatestDraft]);
   useEffect(
     () => () => {
       void flushDraft();
@@ -371,56 +364,90 @@ export function ReportEditorClient({
     [flushDraft],
   );
   const savePublished = async (report: DailyReport) => {
-    await flushDraft();
+    try {
+      await flushDraft();
+    } catch (reason) {
+      setPublishError(
+        reason instanceof Error ? reason.message : "บันทึกฉบับร่างไม่สำเร็จ",
+      );
+      return;
+    }
     // A recovered draft is based on the published version that was present
     // when it was saved. Keep that CAS value until the user reviews a conflict.
     const expectedVersion = draftBaseVersion.current;
-    const savedDraftVersion = draftBaseVersion.current;
-    setLoadState("loading");
+    const savedDraftRevision = draftRevision.current;
+    setPublishing(true);
+    setPublishError(null);
     setError(null);
-    const response = await fetch(`/api/reports/${report.reportDate}`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ report, expectedVersion }),
-    });
+    let response: Response;
+    try {
+      response = await fetch(`/api/reports/${report.reportDate}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ report, expectedVersion }),
+      });
+    } catch (reason) {
+      setPublishing(false);
+      setPublishError(
+        reason instanceof Error ? reason.message : "บันทึกรายงานไม่สำเร็จ",
+      );
+      return;
+    }
     const payload = await readJson(response);
     if (response.status === 409) {
       let current = (payload.currentReport ?? payload.report) as
         DailyReport | undefined;
       if (!current) {
-        const currentResponse = await fetch(`/api/reports/${report.reportDate}`, {
-          cache: "no-store",
-        });
+        const currentResponse = await fetch(
+          `/api/reports/${report.reportDate}`,
+          {
+            cache: "no-store",
+          },
+        );
         const currentPayload = await readJson(currentResponse);
         if (currentResponse.ok && currentPayload.report) {
           current = currentPayload.report as DailyReport;
         }
       }
       if (current) setPublished(current);
-      setLoadState("idle");
+      setPublishing(false);
       setConflict(
         "รายงานนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ฉบับร่างของคุณยังอยู่ กรุณาตรวจสอบข้อมูลปัจจุบันก่อนบันทึกอีกครั้ง",
       );
       return;
     }
     if (!response.ok) {
-      setLoadState("error");
-      setError(getError(payload, "บันทึกรายงานไม่สำเร็จ"));
+      setPublishing(false);
+      setPublishError(getError(payload, "บันทึกรายงานไม่สำเร็จ"));
       return;
     }
     const saved = (payload.report ?? report) as DailyReport;
     setPublished(saved);
-    setDraft(null);
-    latestDraft.current = null;
-    draftBaseVersion.current = saved.version ?? 0;
-    setDraftState("idle");
-    setLoadState("idle");
     setConflict(null);
-    await fetch(`/api/drafts/${report.reportDate}`, {
-      method: "DELETE",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ expectedVersion: savedDraftVersion }),
-    });
+    const deleteDraftResponse = await fetch(
+      `/api/drafts/${report.reportDate}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedDraftRevision: savedDraftRevision }),
+      },
+    );
+    if (deleteDraftResponse.ok) {
+      draftBaseVersion.current = saved.version ?? 0;
+      setDraft(null);
+      latestDraft.current = null;
+      draftRevision.current = 0;
+      setDraftState("idle");
+    } else {
+      const deletePayload = await readJson(deleteDraftResponse);
+      setPublishError(
+        getError(
+          deletePayload,
+          "รายงานเผยแพร่แล้ว แต่ไม่สามารถล้างฉบับร่างได้",
+        ),
+      );
+    }
+    setPublishing(false);
   };
   const deletePublished = async (date: string) => {
     const expectedVersion = published?.version ?? 0;
@@ -440,6 +467,10 @@ export function ReportEditorClient({
     await flushDraft();
     setReportDate(date);
     window.history.replaceState(null, "", `/reports/${date}`);
+  };
+  const leaveToDashboard = async () => {
+    await flushDraft();
+    router.push("/dashboard");
   };
   if (loadState === "loading")
     return (
@@ -471,12 +502,14 @@ export function ReportEditorClient({
       canDelete={role === "admin"}
       saveState={draftState}
       errorMessage={error}
+      publishErrorMessage={publishError}
+      isPublishing={publishing}
       conflictMessage={conflict}
       onDateChange={(date) => void moveDate(date)}
       onSave={savePublished}
       onDelete={role === "admin" ? deletePublished : undefined}
       onCancel={() => {
-        void moveDate(reportDate);
+        void leaveToDashboard();
       }}
       onDraftChange={scheduleDraft}
       onDraftFlush={flushDraft}

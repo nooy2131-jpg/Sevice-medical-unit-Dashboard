@@ -14,6 +14,7 @@ import {
   formatThaiDate,
   normalizeTopItems,
 } from "../types/report";
+import { shiftDate } from "../lib/dates";
 
 export interface DashboardViewProps {
   reports: DailyReport[];
@@ -24,11 +25,13 @@ export interface DashboardViewProps {
 }
 type RangeMode = "7D" | "MONTH" | "ALL" | "SINGLE";
 
-function shiftDate(value: string, delta: number): string {
-  const [year, month, day] = value.split("-").map(Number);
-  return new Date(Date.UTC(year, month - 1, day + delta))
-    .toISOString()
-    .slice(0, 10);
+function safeShiftDate(value: string, delta: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  try {
+    return shiftDate(value, delta);
+  } catch {
+    return "";
+  }
 }
 
 function metric(reports: DailyReport[], key: keyof DailyReport): number {
@@ -48,7 +51,7 @@ export function DashboardView({
   const [rangeMode, setRangeMode] = useState<RangeMode>("7D");
   const [singleDate, setSingleDate] = useState(periodEndDate);
   const dates = Array.from({ length: 7 }, (_, index) =>
-    shiftDate(periodEndDate, index - 6),
+    safeShiftDate(periodEndDate, index - 6),
   );
   const byDate = new Map(reports.map((report) => [report.reportDate, report]));
   const visibleDates =
@@ -70,6 +73,7 @@ export function DashboardView({
   const totalMale = metric(periodReports, "totalMale");
   const totalFemale = metric(periodReports, "totalFemale");
   const total = totalMale + totalFemale;
+  const averageDenominator = rangeMode === "7D" ? 7 : 0;
   const missing =
     rangeMode === "7D" ? dates.filter((date) => !byDate.has(date)) : [];
   const diseases = new Map<string, number>();
@@ -135,7 +139,7 @@ export function DashboardView({
         <div className="no-print flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => onPeriodChange(shiftDate(periodEndDate, -7))}
+            onClick={() => onPeriodChange(safeShiftDate(periodEndDate, -7))}
             className="control-button"
             aria-label="ช่วงก่อนหน้า"
           >
@@ -154,7 +158,7 @@ export function DashboardView({
           />
           <button
             type="button"
-            onClick={() => onPeriodChange(shiftDate(periodEndDate, 7))}
+            onClick={() => onPeriodChange(safeShiftDate(periodEndDate, 7))}
             className="control-button"
             aria-label="ช่วงถัดไป"
           >
@@ -261,14 +265,14 @@ export function DashboardView({
           <p className="text-sm text-slate-500">วันที่บันทึกแล้ว</p>
           <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-slate-950">
             {periodReports.length}
-            <span className="text-lg font-normal text-slate-500"> / 7</span>
+            {rangeMode === "7D" && (
+              <span className="text-lg font-normal text-slate-500"> / 7</span>
+            )}
           </p>
           <p className="mt-1 text-xs text-slate-500">
-            เฉลี่ย{" "}
-            {periodReports.length
-              ? Math.round(total / periodReports.length).toLocaleString("th-TH")
-              : 0}{" "}
-            รายต่อวันที่บันทึก
+            {averageDenominator
+              ? `เฉลี่ย ${Math.round(total / averageDenominator).toLocaleString("th-TH")} รายต่อ 7 วันปฏิทิน`
+              : "ค่าเฉลี่ยแสดงเฉพาะช่วง 7 วันปฏิทิน"}
           </p>
         </article>
         <article className="rounded-xl border border-slate-200 bg-white p-5">
