@@ -5,34 +5,35 @@
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { DailyReport, ReportsMap } from './types/report';
-import { INITIAL_REPORTS_DATA } from './data/seedReports';
 import { DashboardView } from './components/DashboardView';
 import { ReportFormView } from './components/ReportFormView';
 import { RecordsTableView } from './components/RecordsTableView';
-import { GasSetupView } from './components/GasSetupView';
 
-const STORAGE_KEY = 'ongkharak_hospital_reports_v1';
+const STORAGE_KEY = 'ongkharak_hospital_reports_v2';
 
-type ActiveTab = 'dashboard' | 'form' | 'table' | 'gas';
+type ActiveTab = 'dashboard' | 'form' | 'table';
 
 export default function App() {
   const [reportsMap, setReportsMap] = useState<ReportsMap>(() => {
     try {
+      localStorage.removeItem('ongkharak_hospital_reports_v1');
       const saved = localStorage.getItem(STORAGE_KEY);
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed && typeof parsed === 'object' && Object.keys(parsed).length > 0) {
+        if (parsed && typeof parsed === 'object') {
           return parsed;
         }
       }
     } catch {
-      // Fallback to initial seed data
+      // Fallback to empty object
     }
-    return INITIAL_REPORTS_DATA;
+    return {};
   });
 
   const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
-  const [editingDate, setEditingDate] = useState<string>('2026-10-03');
+  const [editingDate, setEditingDate] = useState<string>(
+    new Date().toISOString().slice(0, 10)
+  );
   const [statusMessage, setStatusMessage] = useState<{ text: string; isError?: boolean } | null>(
     null
   );
@@ -86,19 +87,7 @@ export default function App() {
   };
 
   const handleNewReport = () => {
-    const dates = Object.keys(reportsMap).sort();
-    if (dates.length > 0) {
-      const last = dates[dates.length - 1];
-      const d = new Date(last + 'T00:00:00');
-      if (!isNaN(d.getTime())) {
-        d.setDate(d.getDate() + 1);
-        setEditingDate(d.toISOString().slice(0, 10));
-      } else {
-        setEditingDate(new Date().toISOString().slice(0, 10));
-      }
-    } else {
-      setEditingDate(new Date().toISOString().slice(0, 10));
-    }
+    setEditingDate(new Date().toISOString().slice(0, 10));
     setActiveTab('form');
   };
 
@@ -107,8 +96,6 @@ export default function App() {
       'ReportDate',
       'TotalMale',
       'TotalFemale',
-      'ThaiMale',
-      'ThaiFemale',
       'GenMale',
       'GenFemale',
       'ProcMale',
@@ -141,8 +128,6 @@ export default function App() {
         r.reportDate,
         r.totalMale,
         r.totalFemale,
-        r.thaiMale,
-        r.thaiFemale,
         r.genMale,
         r.genFemale,
         r.procMale,
@@ -174,7 +159,7 @@ export default function App() {
     link.click();
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
-    showToast('ส่งออกไฟล์ CSV (21 คอลัมน์ สำหรับ Google Sheet DailyReports) เรียบร้อยแล้ว');
+    showToast('ส่งออกไฟล์ CSV เรียบร้อยแล้ว');
   };
 
   const handleImportReports = (imported: DailyReport[]) => {
@@ -188,12 +173,6 @@ export default function App() {
       return next;
     });
     showToast(`นำเข้าข้อมูลสำเร็จจำนวน ${imported.length} วันทำการ`);
-  };
-
-  const handleResetToSeed = () => {
-    setReportsMap(INITIAL_REPORTS_DATA);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_REPORTS_DATA));
-    showToast('รีเซ็ตเป็นชุดข้อมูลตัวอย่างของหน่วยบริการชั่วคราว รพ.องครักษ์ เรียบร้อยแล้ว');
   };
 
   return (
@@ -212,7 +191,7 @@ export default function App() {
           รพ.องครักษ์ · หน่วยบริการชั่วคราว
         </a>
 
-        {/* Zone 2: 4 clean text navigation links */}
+        {/* Zone 2: Clean text navigation links */}
         <nav className="hidden md:flex items-center gap-6 text-sm font-medium text-slate-600">
           <button
             type="button"
@@ -247,28 +226,19 @@ export default function App() {
           >
             ตารางข้อมูลย้อนหลัง
           </button>
-          <button
-            type="button"
-            onClick={() => setActiveTab('gas')}
-            className={`py-1 transition-colors whitespace-nowrap ${
-              activeTab === 'gas'
-                ? 'text-teal-700 font-semibold underline underline-offset-8 decoration-2 decoration-teal-600'
-                : 'hover:text-slate-900'
-            }`}
-          >
-            โค้ดตั้งค่า Google Sheet
-          </button>
         </nav>
 
-        {/* Zone 3: 1-2 primary actions */}
+        {/* Zone 3: Primary actions */}
         <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={handleExportCsv}
-            className="hidden sm:inline-flex px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
-          >
-            ส่งออก CSV
-          </button>
+          {reportsList.length > 0 && (
+            <button
+              type="button"
+              onClick={handleExportCsv}
+              className="hidden sm:inline-flex px-3.5 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
+            >
+              ส่งออก CSV
+            </button>
+          )}
           <button
             type="button"
             onClick={handleNewReport}
@@ -284,7 +254,7 @@ export default function App() {
         <button
           type="button"
           onClick={() => setActiveTab('dashboard')}
-          className={`px-2.5 py-1 rounded-md whitespace-nowrap ${
+          className={`px-3 py-1 rounded-md whitespace-nowrap ${
             activeTab === 'dashboard' ? 'bg-teal-50 text-teal-700 font-semibold' : ''
           }`}
         >
@@ -293,29 +263,20 @@ export default function App() {
         <button
           type="button"
           onClick={() => setActiveTab('form')}
-          className={`px-2.5 py-1 rounded-md whitespace-nowrap ${
+          className={`px-3 py-1 rounded-md whitespace-nowrap ${
             activeTab === 'form' ? 'bg-teal-50 text-teal-700 font-semibold' : ''
           }`}
         >
-          บันทึกข้อมูล
+          บันทึกข้อมูลประจำวัน
         </button>
         <button
           type="button"
           onClick={() => setActiveTab('table')}
-          className={`px-2.5 py-1 rounded-md whitespace-nowrap ${
+          className={`px-3 py-1 rounded-md whitespace-nowrap ${
             activeTab === 'table' ? 'bg-teal-50 text-teal-700 font-semibold' : ''
           }`}
         >
-          ตารางย้อนหลัง
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveTab('gas')}
-          className={`px-2.5 py-1 rounded-md whitespace-nowrap ${
-            activeTab === 'gas' ? 'bg-teal-50 text-teal-700 font-semibold' : ''
-          }`}
-        >
-          โค้ด GAS
+          ตารางข้อมูลย้อนหลัง
         </button>
       </div>
 
@@ -366,18 +327,15 @@ export default function App() {
             onDeleteDate={handleDeleteReport}
             onExportCsv={handleExportCsv}
             onImportReports={handleImportReports}
-            onResetToSeed={handleResetToSeed}
           />
         )}
-
-        {activeTab === 'gas' && <GasSetupView />}
       </main>
 
       {/* Quiet Footer */}
       <footer className="border-t border-slate-200 bg-white px-6 py-4 text-xs text-slate-500 no-print">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
           <span>ระบบสารสนเทศรายงานสถิติผู้รับบริการ หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์ จังหวัดนครนายก</span>
-          <span className="tabular-nums">รองรับโครงสร้างตาราง DailyReports (21 คอลัมน์)</span>
+          <span>หน่วยบริการชั่วคราว รพ.องครักษ์</span>
         </div>
       </footer>
     </div>

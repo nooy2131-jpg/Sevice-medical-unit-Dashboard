@@ -9,8 +9,6 @@ export interface DailyReport {
   reportDate: string; // YYYY-MM-DD
   totalMale: number;
   totalFemale: number;
-  thaiMale: number;
-  thaiFemale: number;
   genMale: number;
   genFemale: number;
   procMale: number;

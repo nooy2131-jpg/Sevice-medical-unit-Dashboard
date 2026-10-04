@@ -1,6 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { DailyReport, formatThaiDate, normalizeTopItems } from '../types/report';
-import { Download, Upload, Search, Trash2, Edit3, Eye, X, RotateCcw } from 'lucide-react';
+import { Download, Upload, Search, Trash2, Edit3, Eye, X } from 'lucide-react';
 
 interface RecordsTableViewProps {
   reports: DailyReport[];
@@ -8,7 +8,6 @@ interface RecordsTableViewProps {
   onDeleteDate: (dateStr: string) => void;
   onExportCsv: () => void;
   onImportReports: (imported: DailyReport[]) => void;
-  onResetToSeed: () => void;
 }
 
 export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
@@ -17,7 +16,6 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
   onDeleteDate,
   onExportCsv,
   onImportReports,
-  onResetToSeed,
 }) => {
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'total-desc'>('date-desc');
@@ -31,7 +29,8 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
     const q = searchQuery.trim().toLowerCase();
     const list = reports.filter((r) => {
       if (!q) return true;
-      const inDate = r.reportDate.toLowerCase().includes(q) || formatThaiDate(r.reportDate).includes(q);
+      const inDate =
+        r.reportDate.toLowerCase().includes(q) || formatThaiDate(r.reportDate).includes(q);
       const inNote = (r.reporterNote || '').toLowerCase().includes(q);
       const inDiseases = normalizeTopItems(r.topDiseases).some((d) =>
         d.name.toLowerCase().includes(q)
@@ -56,12 +55,11 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
     setImportError('');
     const raw = importText.trim();
     if (!raw) {
-      setImportError('กรุณาวางข้อมูล JSON หรือ CSV ที่ต้องการนำเข้า');
+      setImportError('กรุณาวางข้อมูลที่ต้องการนำเข้า');
       return;
     }
 
     try {
-      // Check if JSON (either array or reportsMap object from getReportsData)
       if (raw.startsWith('{') || raw.startsWith('[')) {
         const parsed = JSON.parse(raw);
         const list: DailyReport[] = Array.isArray(parsed)
@@ -69,7 +67,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
           : Object.values(parsed);
         const valid = list.filter((item) => item && typeof item.reportDate === 'string');
         if (valid.length === 0) {
-          setImportError('ไม่พบข้อมูลที่มีรูปแบบ reportDate (YYYY-MM-DD) ที่ถูกต้อง');
+          setImportError('ไม่พบข้อมูลวันที่รายงานที่ถูกต้อง');
           return;
         }
         onImportReports(valid);
@@ -78,7 +76,6 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
         return;
       }
 
-      // Otherwise parse CSV lines matching DailyReports 21 columns
       const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
       if (lines.length < 2) {
         setImportError('ข้อมูล CSV ต้องมีอย่างน้อยหัวตารางและข้อมูล 1 แถว');
@@ -86,32 +83,30 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
       }
       const parsedRows: DailyReport[] = [];
       for (let i = 1; i < lines.length; i++) {
-        // Simple CSV split handling basic quoted JSON columns if needed
-        const cols = lines[i].split('\t').length >= 17 ? lines[i].split('\t') : lines[i].split(',');
+        const cols =
+          lines[i].split('\t').length >= 15 ? lines[i].split('\t') : lines[i].split(',');
         const dateStr = (cols[0] || '').replace(/^"|"$/g, '').trim().slice(0, 10);
         if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
         parsedRows.push({
           reportDate: dateStr,
           totalMale: Number(cols[1]) || 0,
           totalFemale: Number(cols[2]) || 0,
-          thaiMale: Number(cols[3]) || 0,
-          thaiFemale: Number(cols[4]) || 0,
-          genMale: Number(cols[5]) || 0,
-          genFemale: Number(cols[6]) || 0,
-          procMale: Number(cols[7]) || 0,
-          procFemale: Number(cols[8]) || 0,
-          refillMale: Number(cols[9]) || 0,
-          refillFemale: Number(cols[10]) || 0,
-          referDocMale: Number(cols[11]) || 0,
-          referDocFemale: Number(cols[12]) || 0,
-          admitMale: Number(cols[13]) || 0,
-          admitFemale: Number(cols[14]) || 0,
-          referOutMale: Number(cols[15]) || 0,
-          referOutFemale: Number(cols[16]) || 0,
+          genMale: Number(cols[3]) || 0,
+          genFemale: Number(cols[4]) || 0,
+          procMale: Number(cols[5]) || 0,
+          procFemale: Number(cols[6]) || 0,
+          refillMale: Number(cols[7]) || 0,
+          refillFemale: Number(cols[8]) || 0,
+          referDocMale: Number(cols[9]) || 0,
+          referDocFemale: Number(cols[10]) || 0,
+          admitMale: Number(cols[11]) || 0,
+          admitFemale: Number(cols[12]) || 0,
+          referOutMale: Number(cols[13]) || 0,
+          referOutFemale: Number(cols[14]) || 0,
           topDiseases: [],
           topProcedures: [],
-          reporterNote: cols[19] ? String(cols[19]).replace(/^"|"$/g, '') : '',
-          updatedAt: cols[20] ? String(cols[20]).replace(/^"|"$/g, '') : new Date().toISOString(),
+          reporterNote: cols[17] ? String(cols[17]).replace(/^"|"$/g, '') : '',
+          updatedAt: cols[18] ? String(cols[18]).replace(/^"|"$/g, '') : new Date().toISOString(),
         });
       }
 
@@ -134,12 +129,12 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
       <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span>โครงสร้างตาราง Google Sheet: DailyReports (21 คอลัมน์)</span>
+            <span>หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์</span>
             <span aria-hidden="true">·</span>
-            <span className="tabular-nums">ทั้งหมด {reports.length} วันทำการ</span>
+            <span className="tabular-nums">บันทึกทั้งหมด {reports.length} วันทำการ</span>
           </div>
           <h1 className="text-2xl font-bold text-slate-900 mt-1">
-            ตารางฐานข้อมูลรายงานประจำวันย้อนหลัง
+            ตารางข้อมูลรายงานประจำวันย้อนหลัง
           </h1>
         </div>
 
@@ -178,20 +173,11 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
           <button
             type="button"
             onClick={onExportCsv}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 transition-colors whitespace-nowrap"
+            disabled={reports.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-40 transition-colors whitespace-nowrap"
           >
             <Download className="w-3.5 h-3.5" />
-            ส่งออก CSV (21 คอลัมน์)
-          </button>
-
-          <button
-            type="button"
-            onClick={onResetToSeed}
-            title="รีเซ็ตเป็นข้อมูลตัวอย่างเริ่มต้นของ รพ.องครักษ์"
-            className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            ค่าเริ่มต้น
+            ส่งออก CSV
           </button>
         </div>
       </div>
@@ -202,9 +188,8 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
           <table className="w-full text-left border-collapse text-xs">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                <th className="py-3 px-4 whitespace-nowrap">วันที่รายงาน (ReportDate)</th>
+                <th className="py-3 px-4 whitespace-nowrap">วันที่รายงาน</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">ผู้รับบริการรวม (ช/ญ)</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">คนไทย (ช/ญ)</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">ตรวจโรคทั่วไป</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">หัตถการ</th>
                 <th className="py-3 px-3 text-right whitespace-nowrap">รับยาเดิม</th>
@@ -217,14 +202,13 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
             <tbody className="divide-y divide-slate-200">
               {filteredAndSorted.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-10 text-center text-slate-400">
-                    ไม่พบรายการข้อมูลที่ตรงกับคำค้นหา
+                  <td colSpan={9} className="py-10 text-center text-slate-400">
+                    ยังไม่มีรายการข้อมูลในตาราง
                   </td>
                 </tr>
               ) : (
                 filteredAndSorted.map((r) => {
                   const totAll = r.totalMale + r.totalFemale;
-                  const totThai = r.thaiMale + r.thaiFemale;
                   const totGen = r.genMale + r.genFemale;
                   const totProc = r.procMale + r.procFemale;
                   const totRefill = r.refillMale + r.refillFemale;
@@ -250,13 +234,6 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                         </span>
                         <span className="text-slate-500 ml-1">
                           ({r.totalMale}/{r.totalFemale})
-                        </span>
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
-                        <span className="font-semibold">{totThai.toLocaleString()}</span>
-                        <span className="text-slate-400 ml-1">
-                          ({r.thaiMale}/{r.thaiFemale})
                         </span>
                       </td>
 
@@ -331,7 +308,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                             <button
                               type="button"
                               onClick={() => setInspectReport(r)}
-                              title="ดูรายละเอียดครบทั้ง 21 คอลัมน์"
+                              title="ดูรายละเอียด"
                               className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
                             >
                               <Eye className="w-3.5 h-3.5" />
@@ -371,7 +348,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
             <div className="flex items-start justify-between border-b border-slate-200 pb-4">
               <div>
                 <div className="text-xs text-slate-500 tabular-nums">
-                  รหัสแถววันที่ {inspectReport.reportDate} · อัปเดตล่าสุด {inspectReport.updatedAt || '-'}
+                  วันที่ {inspectReport.reportDate} · อัปเดตล่าสุด {inspectReport.updatedAt || '-'}
                 </div>
                 <h3 className="text-lg font-bold text-slate-900 mt-0.5">
                   รายงานประจำวันที่ {formatThaiDate(inspectReport.reportDate)}
@@ -389,7 +366,6 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
               {[
                 { label: 'ผู้รับบริการทั้งหมด', m: inspectReport.totalMale, f: inspectReport.totalFemale },
-                { label: 'สัญชาติไทย', m: inspectReport.thaiMale, f: inspectReport.thaiFemale },
                 { label: 'ตรวจโรคทั่วไป', m: inspectReport.genMale, f: inspectReport.genFemale },
                 { label: 'ทำหัตถการ', m: inspectReport.procMale, f: inspectReport.procFemale },
                 { label: 'รับยาต่อเนื่อง', m: inspectReport.refillMale, f: inspectReport.refillFemale },
@@ -411,7 +387,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100 text-xs">
               <div>
-                <h4 className="font-bold text-slate-900 mb-2">TOP 5 โรคที่พบบ่อย</h4>
+                <h4 className="font-bold text-slate-900 mb-2">5 อันดับโรคที่พบบ่อย</h4>
                 <div className="space-y-1.5">
                   {normalizeTopItems(inspectReport.topDiseases).map((d, i) => (
                     <div key={i} className="flex justify-between py-1 border-b border-slate-100">
@@ -424,7 +400,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
                 </div>
               </div>
               <div>
-                <h4 className="font-bold text-slate-900 mb-2">TOP 5 หัตถการ</h4>
+                <h4 className="font-bold text-slate-900 mb-2">5 อันดับหัตถการ</h4>
                 <div className="space-y-1.5">
                   {normalizeTopItems(inspectReport.topProcedures).map((p, i) => (
                     <div key={i} className="flex justify-between py-1 border-b border-slate-100">
@@ -476,11 +452,9 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
           >
             <div className="flex items-start justify-between border-b border-slate-200 pb-3">
               <div>
-                <h3 className="text-base font-bold text-slate-900">
-                  นำเข้าข้อมูลจาก Google Sheet (CSV หรือ JSON)
-                </h3>
+                <h3 className="text-base font-bold text-slate-900">นำเข้าข้อมูล (CSV หรือ JSON)</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  วางผลลัพธ์ JSON จาก getReportsData() หรือคัดลอกแถวจากชีต DailyReports มาวางได้ทันที
+                  วางข้อมูลจากตารางหรือไฟล์ที่ส่งออกไว้เพื่อนำเข้าสู่ระบบ
                 </p>
               </div>
               <button
@@ -500,7 +474,7 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
 
             <textarea
               rows={7}
-              placeholder='วางข้อมูล JSON เช่น {"2026-10-03": {"reportDate": "2026-10-03", "totalMale": 64, ...}} หรือข้อมูล CSV...'
+              placeholder="วางข้อมูล CSV หรือ JSON ที่ต้องการนำเข้า..."
               value={importText}
               onChange={(e) => setImportText(e.target.value)}
               className="w-full border border-slate-300 rounded-lg p-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-teal-600"

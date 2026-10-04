@@ -51,8 +51,6 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
   const [numbers, setNumbers] = useState({
     totalMale: 0,
     totalFemale: 0,
-    thaiMale: 0,
-    thaiFemale: 0,
     genMale: 0,
     genFemale: 0,
     procMale: 0,
@@ -87,8 +85,6 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       setNumbers({
         totalMale: Number(rec.totalMale) || 0,
         totalFemale: Number(rec.totalFemale) || 0,
-        thaiMale: Number(rec.thaiMale) || 0,
-        thaiFemale: Number(rec.thaiFemale) || 0,
         genMale: Number(rec.genMale) || 0,
         genFemale: Number(rec.genFemale) || 0,
         procMale: Number(rec.procMale) || 0,
@@ -109,8 +105,6 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       setNumbers({
         totalMale: 0,
         totalFemale: 0,
-        thaiMale: 0,
-        thaiFemale: 0,
         genMale: 0,
         genFemale: 0,
         procMale: 0,
@@ -144,16 +138,6 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       ...prev,
       totalMale: sumMale,
       totalFemale: sumFemale,
-      thaiMale: prev.thaiMale === 0 ? sumMale : Math.min(prev.thaiMale, sumMale),
-      thaiFemale: prev.thaiFemale === 0 ? sumFemale : Math.min(prev.thaiFemale, sumFemale),
-    }));
-  };
-
-  const handleSetAllThai = () => {
-    setNumbers((prev) => ({
-      ...prev,
-      thaiMale: prev.totalMale,
-      thaiFemale: prev.totalFemale,
     }));
   };
 
@@ -161,8 +145,6 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
     setNumbers({
       totalMale: 0,
       totalFemale: 0,
-      thaiMale: 0,
-      thaiFemale: 0,
       genMale: 0,
       genFemale: 0,
       procMale: 0,
@@ -249,60 +231,48 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
 
   const metricGroups = [
     {
-      title: '1. ผู้รับบริการทั้งหมด (Total Visits)',
+      title: '1. ผู้รับบริการทั้งหมด',
       subtitle: 'ยอดรวมผู้มารับบริการทั้งหมดประจำวัน',
       mKey: 'totalMale' as const,
       fKey: 'totalFemale' as const,
     },
     {
-      title: '2. สัญชาติไทย (Thai Nationality)',
-      subtitle: `ต่างชาติคำนวณอัตโนมัติ: ชาย ${Math.max(
-        0,
-        numbers.totalMale - numbers.thaiMale
-      )} · หญิง ${Math.max(0, numbers.totalFemale - numbers.thaiFemale)}`,
-      mKey: 'thaiMale' as const,
-      fKey: 'thaiFemale' as const,
-    },
-    {
-      title: '3. ตรวจโรคทั่วไป (General OPD)',
+      title: '2. ตรวจโรคทั่วไป (OPD)',
       subtitle: 'ผู้ป่วยนอกตรวจรักษาโรคทั่วไป',
       mKey: 'genMale' as const,
       fKey: 'genFemale' as const,
     },
     {
-      title: '4. ทำหัตถการ (Procedures)',
+      title: '3. ทำหัตถการ',
       subtitle: 'ทำแผล ฉีดยา พ่นยา เย็บแผล ตัดไหม',
       mKey: 'procMale' as const,
       fKey: 'procFemale' as const,
     },
     {
-      title: '5. รับยาต่อเนื่อง / เติมยา (Medication Refill)',
+      title: '4. รับยาต่อเนื่อง / เติมยาเดิม',
       subtitle: 'คลินิกโรคเรื้อรังและรับยาเดิมตามนัด',
       mKey: 'refillMale' as const,
       fKey: 'refillFemale' as const,
     },
     {
-      title: '6. ขอใบส่งตัว (Referral Document)',
+      title: '5. ขอใบส่งตัว',
       subtitle: 'ผู้ป่วยติดต่อขอหนังสือส่งตัวรักษาต่อ',
       mKey: 'referDocMale' as const,
       fKey: 'referDocFemale' as const,
     },
     {
-      title: '7. รับไว้รักษาใน รพ. (Admit Inpatient)',
+      title: '6. รับไว้รักษาใน รพ. (Admit)',
       subtitle: 'ผู้ป่วยรับไว้เป็นผู้ป่วยในของโรงพยาบาล',
       mKey: 'admitMale' as const,
       fKey: 'admitFemale' as const,
     },
     {
-      title: '8. ส่งต่อรักษาที่อื่น (Refer Out)',
+      title: '7. ส่งต่อรักษาที่อื่น (Refer Out)',
       subtitle: 'ส่งตัวฉุกเฉินหรือส่งต่อไปโรงพยาบาลอื่น',
       mKey: 'referOutMale' as const,
       fKey: 'referOutFemale' as const,
     },
   ];
-
-  const hasThaiOverflow =
-    numbers.thaiMale > numbers.totalMale || numbers.thaiFemale > numbers.totalFemale;
 
   return (
     <form onSubmit={handleSubmit} className="max-w-5xl mx-auto space-y-6">
@@ -310,11 +280,11 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
         <div>
           <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span>ฟังก์ชัน saveReportData(reportJson)</span>
+            <span>หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์</span>
             <span aria-hidden="true">·</span>
             <span>
               {existingRecord
-                ? `พบข้อมูลเดิมของวันที่ ${formatThaiDate(reportDate, true)} (บันทึกเพื่ออัปเดตแถวเดิม)`
+                ? `พบข้อมูลเดิมของวันที่ ${formatThaiDate(reportDate, true)} (บันทึกเพื่ออัปเดตข้อมูล)`
                 : `สร้างรายงานใหม่สำหรับวันที่ ${formatThaiDate(reportDate, true)}`}
             </span>
           </div>
@@ -352,7 +322,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       {/* Quick Helper Bar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
         <div className="text-xs text-slate-600">
-          <strong className="text-slate-900">ตัวช่วยคำนวณอัตโนมัติ:</strong> คุณสามารถกรอกยอดแยกตามแผนก (ข้อ 3–6) แล้วกดปุ่มคำนวณยอดรวมผู้รับบริการทั้งหมดได้ทันที
+          <strong className="text-slate-900">ตัวช่วยคำนวณอัตโนมัติ:</strong> กรอกยอดแยกตามประเภทบริการ (ข้อ 2–5) แล้วกดปุ่มเพื่อรวมเป็นยอดผู้รับบริการทั้งหมดได้ทันที
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -361,37 +331,15 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap"
           >
             <Calculator className="w-3.5 h-3.5" />
-            รวมยอดข้อ 3–6 เป็นผู้รับบริการทั้งหมด
-          </button>
-          <button
-            type="button"
-            onClick={handleSetAllThai}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap"
-          >
-            ตั้งค่าสัญชาติไทย = ยอดผู้รับบริการทั้งหมด
+            รวมยอดข้อ 2–5 เป็นผู้รับบริการทั้งหมด
           </button>
         </div>
       </div>
 
-      {hasThaiOverflow && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-center justify-between gap-4 text-xs text-amber-900">
-          <span>
-            ข้อสังเกต: จำนวนผู้รับบริการสัญชาติไทยมากกว่าจำนวนผู้รับบริการทั้งหมด กรุณาตรวจสอบตัวเลขอีกครั้ง
-          </span>
-          <button
-            type="button"
-            onClick={handleSetAllThai}
-            className="px-3 py-1 bg-amber-800 text-white rounded-md font-medium whitespace-nowrap"
-          >
-            ปรับยอดคนไทยให้เท่ากับยอดรวม
-          </button>
-        </div>
-      )}
-
-      {/* 8 Metric Pairs Grid */}
+      {/* 7 Metric Pairs Grid */}
       <div className="bg-white border border-slate-200 rounded-xl p-6">
         <h2 className="text-base font-bold text-slate-900 pb-4 border-b border-slate-100">
-          ส่วนที่ 1: จำนวนผู้รับบริการแยกตามประเภทและเพศ (คอลัมน์ 2–17)
+          ส่วนที่ 1: จำนวนผู้รับบริการแยกตามประเภทและเพศ
         </h2>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5 mt-5">
@@ -403,7 +351,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
             return (
               <div
                 key={group.title}
-                className="pb-4 border-b border-slate-100 last:border-b-0 md:nth-last-2:border-b-0 flex flex-col justify-between gap-3"
+                className="pb-4 border-b border-slate-100 last:border-b-0 flex flex-col justify-between gap-3"
               >
                 <div className="flex items-baseline justify-between gap-2">
                   <div>
@@ -449,7 +397,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
         <div className="bg-white border border-slate-200 rounded-xl p-6">
           <div className="pb-4 border-b border-slate-100">
             <h2 className="text-base font-bold text-slate-900">
-              ส่วนที่ 2: TOP 5 โรคที่พบบ่อย (TopDiseasesJson)
+              ส่วนที่ 2: 5 อันดับโรคที่พบบ่อย
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               พิมพ์ชื่อโรคหรือคลิกเลือกจากรายการโรคที่พบบ่อย พร้อมระบุจำนวนผู้ป่วย
@@ -515,7 +463,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
         <div className="bg-white border border-slate-200 rounded-xl p-6">
           <div className="pb-4 border-b border-slate-100">
             <h2 className="text-base font-bold text-slate-900">
-              ส่วนที่ 3: TOP 5 หัตถการ (TopProceduresJson)
+              ส่วนที่ 3: 5 อันดับหัตถการ
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">
               พิมพ์ชื่อหัตถการหรือคลิกเลือกจากรายการมาตรฐาน พร้อมระบุจำนวนครั้ง
@@ -582,7 +530,7 @@ export const ReportFormView: React.FC<ReportFormViewProps> = ({
       <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
         <div>
           <label htmlFor="reporter-note" className="block text-sm font-bold text-slate-900 mb-1">
-            ส่วนที่ 4: หมายเหตุเพิ่มเติม (ReporterNote)
+            ส่วนที่ 4: หมายเหตุเพิ่มเติม
           </label>
           <textarea
             id="reporter-note"

@@ -20,13 +20,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     [reports]
   );
 
-  const latestDate = sortedReports.length > 0 ? sortedReports[sortedReports.length - 1].reportDate : '';
+  const latestDate =
+    sortedReports.length > 0 ? sortedReports[sortedReports.length - 1].reportDate : '';
   const [rangeMode, setRangeMode] = useState<RangeMode>('ALL');
   const [selectedSingleDate, setSelectedSingleDate] = useState<string>(latestDate);
 
-  const activeSingleDate = selectedSingleDate && reports.some((r) => r.reportDate === selectedSingleDate)
-    ? selectedSingleDate
-    : latestDate;
+  const activeSingleDate =
+    selectedSingleDate && reports.some((r) => r.reportDate === selectedSingleDate)
+      ? selectedSingleDate
+      : latestDate;
 
   const filteredReports = useMemo(() => {
     if (sortedReports.length === 0) return [];
@@ -47,8 +49,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     const acc = {
       totalMale: 0,
       totalFemale: 0,
-      thaiMale: 0,
-      thaiFemale: 0,
       genMale: 0,
       genFemale: 0,
       procMale: 0,
@@ -69,8 +69,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     for (const r of filteredReports) {
       acc.totalMale += Number(r.totalMale) || 0;
       acc.totalFemale += Number(r.totalFemale) || 0;
-      acc.thaiMale += Number(r.thaiMale) || 0;
-      acc.thaiFemale += Number(r.thaiFemale) || 0;
       acc.genMale += Number(r.genMale) || 0;
       acc.genFemale += Number(r.genFemale) || 0;
       acc.procMale += Number(r.procMale) || 0;
@@ -104,10 +102,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     }
 
     const totalAll = acc.totalMale + acc.totalFemale;
-    const totalThai = acc.thaiMale + acc.thaiFemale;
-    const nonThaiMale = Math.max(0, acc.totalMale - acc.thaiMale);
-    const nonThaiFemale = Math.max(0, acc.totalFemale - acc.thaiFemale);
-    const totalNonThai = nonThaiMale + nonThaiFemale;
 
     const topDiseases = Array.from(diseaseMap.entries())
       .map(([name, val]) => ({ name, ...val }))
@@ -125,10 +119,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     return {
       ...acc,
       totalAll,
-      totalThai,
-      nonThaiMale,
-      nonThaiFemale,
-      totalNonThai,
       avgPerDay,
       topDiseases,
       topProcedures,
@@ -147,7 +137,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           className="mt-6 inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors"
         >
           <Plus className="w-4 h-4" />
-          บันทึกข้อมูลวันแรก
+          บันทึกข้อมูลประจำวัน
         </button>
       </div>
     );
@@ -202,7 +192,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   const malePct = stats.totalAll > 0 ? Math.round((stats.totalMale / stats.totalAll) * 100) : 0;
   const femalePct = stats.totalAll > 0 ? 100 - malePct : 0;
-  const thaiPct = stats.totalAll > 0 ? Math.round((stats.totalThai / stats.totalAll) * 100) : 0;
 
   return (
     <div className="space-y-8">
@@ -315,7 +304,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         {/* KPI 1: Total Visits */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
           <div>
-            <div className="text-xs text-slate-500 font-medium">ผู้รับบริการทั้งหมด (Total Visits)</div>
+            <div className="text-xs text-slate-500 font-medium">ผู้รับบริการทั้งหมด</div>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-3xl font-bold text-slate-900 tabular-nums">
                 {stats.totalAll.toLocaleString()}
@@ -332,56 +321,63 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
           </div>
         </div>
 
-        {/* KPI 2: Nationality Breakdown */}
+        {/* KPI 2: General OPD */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
           <div>
-            <div className="text-xs text-slate-500 font-medium">สัญชาติไทย / ต่างชาติ</div>
+            <div className="text-xs text-slate-500 font-medium">ตรวจโรคทั่วไป (OPD)</div>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {stats.totalThai.toLocaleString()}
+                {(stats.genMale + stats.genFemale).toLocaleString()}
               </span>
               <span className="text-xs text-teal-700 font-medium tabular-nums">
-                คนไทย {thaiPct}%
+                ผู้ป่วยนอกทั่วไป
               </span>
             </div>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 tabular-nums">
-            <span>ไทย (ช {stats.thaiMale.toLocaleString()} / ญ {stats.thaiFemale.toLocaleString()})</span>
+            <span>ชาย {stats.genMale.toLocaleString()} ราย</span>
             <span aria-hidden="true">·</span>
-            <span>ต่างชาติ {stats.totalNonThai.toLocaleString()} ราย</span>
+            <span>หญิง {stats.genFemale.toLocaleString()} ราย</span>
           </div>
         </div>
 
-        {/* KPI 3: General OPD & Medication Refill */}
+        {/* KPI 3: Procedures & Medication Refill */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
           <div>
-            <div className="text-xs text-slate-500 font-medium">ตรวจโรคทั่วไป & รับยาต่อเนื่อง</div>
+            <div className="text-xs text-slate-500 font-medium">ทำหัตถการ & รับยาต่อเนื่อง</div>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {(stats.genMale + stats.genFemale + stats.refillMale + stats.refillFemale).toLocaleString()}
+                {(stats.procMale + stats.procFemale + stats.refillMale + stats.refillFemale).toLocaleString()}
               </span>
               <span className="text-xs text-slate-500 tabular-nums">
-                ตรวจโรค {(stats.genMale + stats.genFemale).toLocaleString()} ราย
+                หัตถการ {(stats.procMale + stats.procFemale).toLocaleString()} ราย
               </span>
             </div>
           </div>
           <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 tabular-nums">
-            <span>OPD (ช {stats.genMale} / ญ {stats.genFemale})</span>
+            <span>หัตถการ (ช {stats.procMale} / ญ {stats.procFemale})</span>
             <span aria-hidden="true">·</span>
             <span>รับยาเดิม {(stats.refillMale + stats.refillFemale).toLocaleString()} ราย</span>
           </div>
         </div>
 
-        {/* KPI 4: Procedures, Referrals & Admissions */}
+        {/* KPI 4: Referrals & Admissions */}
         <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
           <div>
-            <div className="text-xs text-slate-500 font-medium">หัตถการ · ใบส่งตัว · Admit · Refer</div>
+            <div className="text-xs text-slate-500 font-medium">ขอใบส่งตัว · Admit · Refer Out</div>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {(stats.procMale + stats.procFemale).toLocaleString()}
+                {(
+                  stats.referDocMale +
+                  stats.referDocFemale +
+                  stats.admitMale +
+                  stats.admitFemale +
+                  stats.referOutMale +
+                  stats.referOutFemale
+                ).toLocaleString()}
               </span>
               <span className="text-xs text-slate-500 tabular-nums">
-                ทำหัตถการรวม (ครั้ง)
+                รายการส่งต่อ/รับไว้
               </span>
             </div>
           </div>
@@ -448,7 +444,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
                       }}
                       title={`${formatThaiDate(r.reportDate)}: รวม ${tot} ราย (ชาย ${m}, หญิง ${f})`}
                       className={`group flex-1 flex flex-col items-center justify-end h-full focus:outline-none transition-opacity ${
-                        rangeMode === 'SINGLE' && !isSelected ? 'opacity-45 hover:opacity-80' : 'opacity-100'
+                        rangeMode === 'SINGLE' && !isSelected
+                          ? 'opacity-45 hover:opacity-80'
+                          : 'opacity-100'
                       }`}
                     >
                       <span className="text-[11px] font-mono tabular-nums text-slate-700 font-semibold mb-1.5">
@@ -477,7 +475,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
               <div className="flex items-center gap-2 sm:gap-3 pt-2 px-1">
                 {sortedReports.map((r) => {
                   const parts = r.reportDate.split('-');
-                  const shortLabel = parts.length === 3 ? `${parts[2]}/${parts[1]}` : r.reportDate;
+                  const shortLabel =
+                    parts.length === 3 ? `${parts[2]}/${parts[1]}` : r.reportDate;
                   const isSelected =
                     rangeMode === 'SINGLE' && activeSingleDate === r.reportDate;
                   return (
@@ -578,7 +577,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
           <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 tabular-nums">
             <span>สัดส่วนเพศรวม: ชาย {malePct}% · หญิง {femalePct}%</span>
-            <span>สัญชาติไทย {thaiPct}%</span>
+            <span>รวม {stats.totalAll.toLocaleString()} ราย</span>
           </div>
         </div>
       </div>
