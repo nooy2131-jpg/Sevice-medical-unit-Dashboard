@@ -21,7 +21,7 @@ describe('HTTP request guards', () => {
   it('turns malformed JSON into a 400 HttpError', async () => {
     let error: unknown;
     try {
-      await readJson(new Request('http://localhost:40000/api/invitations', { method: 'POST', body: '{' }));
+      await readJson(new Request('http://localhost:40000/api/invitations', { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' }));
     } catch (reason) {
       error = reason;
     }
@@ -51,7 +51,7 @@ describe('HTTP request guards', () => {
     }
     expect(error).toBeInstanceOf(HttpError);
     expect((error as HttpError).status).toBe(413);
-    expect(reads).toBe(3);
+    expect(reads).toBe(2);
   });
 
   it('limits public invitation acceptance to 4 KiB', async () => {
