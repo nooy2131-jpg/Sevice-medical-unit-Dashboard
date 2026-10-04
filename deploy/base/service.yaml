@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: okr-unit
+spec:
+  selector:
+    app.kubernetes.io/name: okr-unit
+  ports:
+    - name: http
+      port: 80
+      targetPort: http

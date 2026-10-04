@@ -1,0 +1,20 @@
+# Example only. Register this Application in the GitOps repository after choosing
+# the repository URL, revision, and cluster project policy.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: okr-unit
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/REPLACE_WITH_OWNER/REPLACE_WITH_REPOSITORY.git
+    targetRevision: main
+    path: deploy/overlays/prod
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: okr-unit
+  syncPolicy:
+    automated:
+      prune: false
+      selfHeal: true

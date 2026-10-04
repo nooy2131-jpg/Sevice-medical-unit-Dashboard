@@ -1,0 +1,12 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: okr-unit
+spec:
+  template:
+    spec:
+      containers:
+        - name: app
+          env:
+            - name: BETTER_AUTH_URL
+              value: https://okr-unit.pskwr.com
