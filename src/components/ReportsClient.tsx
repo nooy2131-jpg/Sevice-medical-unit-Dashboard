@@ -369,7 +369,7 @@ export function ReportEditorClient({
     if (draftTimer.current) {
       clearTimeout(draftTimer.current);
       draftTimer.current = null;
-      void persistLatestDraft();
+      await persistLatestDraft();
     }
     if (savePromise.current) await savePromise.current;
   }, [persistLatestDraft]);
