@@ -272,7 +272,11 @@ export function ReportFormView({
         if (itemIndex !== index) return item;
         if (key === "name") return { ...item, name: value };
         const numeric = Math.max(0, Math.floor(Number(value)) || 0);
-        return { ...item, [key]: numeric };
+        const updated = { ...item, [key]: numeric };
+        if (key === "male" || key === "female") {
+          updated.count = (updated.male ?? 0) + (updated.female ?? 0);
+        }
+        return updated;
       });
       emitDraft(
         numbers,
