@@ -246,6 +246,7 @@ export function ReportEditorClient({
   const draftBaseVersion = useRef(0);
   const draftRevision = useRef(0);
   const latestDraft = useRef<DailyReport | null>(null);
+  const latestDraftValue = useRef<DailyReport | null>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savePromise = useRef<Promise<void> | null>(null);
   const loadedKey = useRef<string>("");
@@ -260,6 +261,7 @@ export function ReportEditorClient({
     setPublished(null);
     setDraft(null);
     latestDraft.current = null;
+    latestDraftValue.current = null;
     try {
       const draftResponse = await fetch(`/api/drafts/${date}`, {
         cache: "no-store",
@@ -289,6 +291,7 @@ export function ReportEditorClient({
       setPublished(found);
       setDraft(draftValue ?? null);
       latestDraft.current = draftValue ?? null;
+      latestDraftValue.current = draftValue ?? null;
       setLoadState("idle");
       setDraftState(draftValue ? "saved" : "idle");
     } catch (reason) {
@@ -306,35 +309,43 @@ export function ReportEditorClient({
   const persistLatestDraft = useCallback(async (baseVersionOverride?: number) => {
     if (savePromise.current) return savePromise.current;
     const run = (async () => {
-      while (latestDraft.current) {
-        const value = latestDraft.current;
-        const expectedDraftRevision = draftRevision.current;
-        setDraftState("saving");
-        setError(null);
-        const response = await fetch(`/api/drafts/${value.reportDate}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            data: value,
-            expectedVersion: baseVersionOverride ?? draftBaseVersion.current,
-            expectedDraftRevision,
-          }),
-        });
-        const payload = await readJson(response);
-        if (!response.ok) {
-          setDraftState("error");
-          setError(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
-          throw new Error(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
+      try {
+        while (latestDraft.current) {
+          const value = latestDraft.current;
+          const expectedDraftRevision = draftRevision.current;
+          setDraftState("saving");
+          setError(null);
+          const response = await fetch(`/api/drafts/${value.reportDate}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              data: value,
+              expectedVersion: baseVersionOverride ?? draftBaseVersion.current,
+              expectedDraftRevision,
+            }),
+          });
+          const payload = await readJson(response);
+          if (!response.ok) {
+            setDraftState("error");
+            setError(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
+            throw new Error(getError(payload, "บันทึกฉบับร่างไม่สำเร็จ"));
+          }
+          const savedDraft = payload.draft as { revision?: unknown } | undefined;
+          if (typeof savedDraft?.revision === "number")
+            draftRevision.current = savedDraft.revision;
+          if (baseVersionOverride !== undefined)
+            draftBaseVersion.current = baseVersionOverride;
+          if (latestDraft.current === value) {
+            latestDraft.current = null;
+            setDraftState("saved");
+          }
         }
-        const savedDraft = payload.draft as { revision?: unknown } | undefined;
-        if (typeof savedDraft?.revision === "number")
-          draftRevision.current = savedDraft.revision;
-        if (baseVersionOverride !== undefined)
-          draftBaseVersion.current = baseVersionOverride;
-        if (latestDraft.current === value) {
-          latestDraft.current = null;
-          setDraftState("saved");
-        }
+      } catch (reason) {
+        setDraftState("error");
+        setError(
+          reason instanceof Error ? reason.message : "บันทึกฉบับร่างไม่สำเร็จ",
+        );
+        throw reason;
       }
     })();
     savePromise.current = run.finally(() => {
@@ -346,11 +357,12 @@ export function ReportEditorClient({
     if (!draft && !latestDraft.current)
       draftBaseVersion.current = published?.version ?? 0;
     latestDraft.current = value;
+    latestDraftValue.current = value;
     setDraft(value);
     setDraftState("saving");
     if (draftTimer.current) clearTimeout(draftTimer.current);
     draftTimer.current = setTimeout(() => {
-      void persistLatestDraft();
+      void persistLatestDraft().catch(() => undefined);
     }, 650);
   };
   const flushDraft = useCallback(async () => {
@@ -363,7 +375,7 @@ export function ReportEditorClient({
   }, [persistLatestDraft]);
   useEffect(
     () => () => {
-      void flushDraft();
+      void flushDraft().catch(() => undefined);
     },
     [flushDraft],
   );
@@ -444,6 +456,7 @@ export function ReportEditorClient({
       draftBaseVersion.current = saved.version ?? 0;
       setDraft(null);
       latestDraft.current = null;
+      latestDraftValue.current = null;
       draftRevision.current = 0;
       setDraftState("idle");
     } else {
@@ -459,10 +472,12 @@ export function ReportEditorClient({
   };
   const rebaseDraft = async () => {
     const currentVersion = verifiedConflictVersion;
-    const value = latestDraft.current ?? draft;
-    if (currentVersion === null || !value) return;
-    latestDraft.current = value;
+    if (currentVersion === null) return;
     try {
+      await flushDraft();
+      const value = latestDraftValue.current ?? latestDraft.current ?? draft;
+      if (!value) return;
+      latestDraft.current = value;
       await persistLatestDraft(currentVersion);
       setConflict(null);
       setVerifiedConflictVersion(null);
