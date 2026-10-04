@@ -184,8 +184,9 @@ export function ReportsRecordsClient({ role }: { role: UserRole }) {
     });
     const payload = await readJson(response);
     if (!response.ok) {
-      setError(getError(payload, "นำเข้ารายงานไม่สำเร็จ"));
-      return;
+      const message = getError(payload, "นำเข้ารายงานไม่สำเร็จ");
+      setError(message);
+      throw new Error(message);
     }
     await loadReports();
   };

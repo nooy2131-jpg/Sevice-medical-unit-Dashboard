@@ -183,7 +183,14 @@ export function RecordsTableView({
           : [[row.reportDate, current.version]];
       }),
     );
-    await onImportRows(importPreview.rows, duplicateMode, expectedVersions);
+    try {
+      await onImportRows(importPreview.rows, duplicateMode, expectedVersions);
+    } catch (reason) {
+      setImportError(
+        reason instanceof Error ? reason.message : "นำเข้ารายงานไม่สำเร็จ",
+      );
+      return;
+    }
     setImportPreview(null);
   };
   return (
