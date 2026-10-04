@@ -47,7 +47,7 @@ Store recoverable drafts per account and reporting date. Draft autosave does not
 
 Validate dates, finite non-negative integer counts, input lengths, and top-item shapes on the server and in database constraints where appropriate. Do not enforce equality between total service counts and category sums. Keep reporting dates as calendar dates interpreted in Asia/Bangkok; timestamps remain UTC and display in local time.
 
-Keep durable audit records for report mutations, invitations, role changes, and account disabling without logging credentials or tokens. A dedicated audit-history UI is outside the initial scope. Drafts stay outside exports and imports. Soft-delete with Admin restore is a proposed safeguard, not a confirmed launch requirement.
+Keep durable audit records for report mutations, invitations, role changes, and account disabling without logging credentials or tokens. A dedicated audit-history UI is outside the initial scope. Drafts stay outside exports and imports. Deletion retains a tombstone and increments the report version to reject stale saves after a date is recreated. Lists and exports omit deleted reports. An Admin restore UI is outside the launch scope.
 
 ## Delivery sequence
 
@@ -89,7 +89,7 @@ Deliverable: desktop and mobile reporting workflows are understandable and usabl
 
 Run type checks, lint, production build, targeted integration tests, and Playwright workflows. Test invitation replay/expiry/revocation, uninvited Email and Google access, account linking, reset flows, Member denial for every Admin operation, immediate role revocation, bootstrap idempotency, and concurrent last-Admin changes.
 
-Test draft recovery, duplicate report dates, stale saves, independent totals, database validation, CSV round trips, import rollback, soft-delete/restore if adopted, and Bangkok date boundaries. Check mobile entry, keyboard navigation, printing, and that production assets contain no secrets. Verify the application's database tables cannot be read through anonymous Supabase API access.
+Test draft recovery, draft revision conflicts, duplicate report dates, stale saves, independent totals, database validation, CSV round trips, import rollback, tombstone resurrection, and Bangkok date boundaries. Check mobile entry, keyboard navigation, printing, and that production assets contain no secrets. Verify the application's database tables cannot be read through anonymous Supabase API access.
 
 Use separate writer and reviewer models per Ping's instructions: gpt-5.6-luna implements at high reasoning effort; gpt-5.6-sol reviews. Divide implementation into independent owned areas and isolated worktrees when parallelizing. The primary agent inspects the resulting changes and validation before any release.
 
@@ -99,7 +99,7 @@ Inspect current homelab routes, architecture, image access, and secret conventio
 
 Before promoting, configure database connectivity and TLS, Better Auth secret/origin, Google OAuth credentials and callback, Resend sending credentials and verified sender, and controlled first-Admin setup. Apply migrations through a deliberate deployment step and confirm backup/restore access. Do not depend on unspecified Supabase plan backup features.
 
-Smoke-test login, invitations, Settings, report saves, exports, and HTTPS at `okr-unit.pskwr.com`. Prepare rollback to the previous image, and document database compatibility separately; an image rollback does not undo migrations. Commit/push only when Ping asks. This planning request does not authorize immediate implementation or remote deployment.
+Smoke-test login, invitations, Settings, report saves, exports, and HTTPS at `okr-unit.pskwr.com`. Prepare rollback to the previous image, and document database compatibility separately; an image rollback does not undo migrations. Implementation and opening a PR were authorized after planning. Remote deployment remains a separate release step.
 
 ## Launch inputs
 
@@ -128,3 +128,7 @@ These callback paths assume Better Auth's default `/api/auth` base path. Keep cl
 - [Supabase PostgreSQL connections](https://supabase.com/docs/guides/database/connecting-to-postgres)
 - [Prisma production migrations](https://www.prisma.io/docs/orm/prisma-migrate/workflows/development-and-production)
 - [Resend domain setup](https://resend.com/docs/dashboard/domains/introduction)
+
+## Delivery status
+
+The Next.js rebuild, server persistence, invitation-only authentication, RBAC, Settings, report workflows, CI, and deployment manifests are implemented on the PR branch. Verification uses an isolated local PostgreSQL database. Browser workflow tests are supplied but were not executed because browser access was denied. Google OAuth, Resend delivery, Supabase connectivity, and cluster routing require configured credentials and release-environment verification. No remote deployment was performed.

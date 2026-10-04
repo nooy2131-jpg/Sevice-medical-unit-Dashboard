@@ -185,7 +185,6 @@ export function ReportsRecordsClient({ role }: { role: UserRole }) {
     const payload = await readJson(response);
     if (!response.ok) {
       const message = getError(payload, "นำเข้ารายงานไม่สำเร็จ");
-      setError(message);
       throw new Error(message);
     }
     await loadReports();
@@ -450,6 +449,19 @@ export function ReportEditorClient({
     }
     setPublishing(false);
   };
+  const rebaseDraft = async () => {
+    const currentVersion = published?.version;
+    const value = latestDraft.current ?? draft;
+    if (currentVersion === undefined || !value) return;
+    draftBaseVersion.current = currentVersion;
+    setConflict(null);
+    latestDraft.current = value;
+    try {
+      await persistLatestDraft();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "ปรับฐานฉบับร่างไม่สำเร็จ");
+    }
+  };
   const deletePublished = async (date: string) => {
     const expectedVersion = published?.version ?? 0;
     const response = await fetch(`/api/reports/${date}`, {
@@ -514,6 +526,7 @@ export function ReportEditorClient({
       }}
       onDraftChange={scheduleDraft}
       onDraftFlush={flushDraft}
+      onRebase={rebaseDraft}
     />
   );
 }

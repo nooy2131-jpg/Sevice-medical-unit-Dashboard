@@ -54,6 +54,7 @@ export interface ReportFormViewProps {
   onCancel?: () => void;
   onDraftChange?: (report: DailyReport) => void;
   onDraftFlush?: () => Promise<void>;
+  onRebase?: () => Promise<void>;
 }
 
 const numberFields: NumberField[] = [
@@ -211,6 +212,7 @@ export function ReportFormView({
   onCancel,
   onDraftChange,
   onDraftFlush,
+  onRebase,
 }: ReportFormViewProps) {
   const source = draft ?? publishedReport;
   const [numbers, setNumbers] = useState<NumberValues>(() =>
@@ -359,7 +361,16 @@ export function ReportFormView({
           role="alert"
           className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
         >
-          {conflictMessage}
+          <p>{conflictMessage}</p>
+          {onRebase && (
+            <button
+              type="button"
+              onClick={() => void onRebase()}
+              className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            >
+              ใช้เวอร์ชันปัจจุบันเป็นฐาน แล้วบันทึกฉบับร่างใหม่
+            </button>
+          )}
         </div>
       )}
       {publishErrorMessage && (
