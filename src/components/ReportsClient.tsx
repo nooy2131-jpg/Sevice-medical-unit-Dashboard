@@ -242,6 +242,7 @@ export function ReportEditorClient({
   const [publishError, setPublishError] = useState<string | null>(null);
   const [publishing, setPublishing] = useState(false);
   const [conflict, setConflict] = useState<string | null>(null);
+  const [verifiedConflictVersion, setVerifiedConflictVersion] = useState<number | null>(null);
   const draftBaseVersion = useRef(0);
   const draftRevision = useRef(0);
   const latestDraft = useRef<DailyReport | null>(null);
@@ -255,6 +256,7 @@ export function ReportEditorClient({
     setLoadState("loading");
     setError(null);
     setConflict(null);
+    setVerifiedConflictVersion(null);
     setPublished(null);
     setDraft(null);
     latestDraft.current = null;
@@ -301,7 +303,7 @@ export function ReportEditorClient({
     void loadDate(reportDate);
   }, [loadDate, reportDate]);
 
-  const persistLatestDraft = useCallback(async () => {
+  const persistLatestDraft = useCallback(async (baseVersionOverride?: number) => {
     if (savePromise.current) return savePromise.current;
     const run = (async () => {
       while (latestDraft.current) {
@@ -314,7 +316,7 @@ export function ReportEditorClient({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             data: value,
-            expectedVersion: draftBaseVersion.current,
+            expectedVersion: baseVersionOverride ?? draftBaseVersion.current,
             expectedDraftRevision,
           }),
         });
@@ -327,6 +329,8 @@ export function ReportEditorClient({
         const savedDraft = payload.draft as { revision?: unknown } | undefined;
         if (typeof savedDraft?.revision === "number")
           draftRevision.current = savedDraft.revision;
+        if (baseVersionOverride !== undefined)
+          draftBaseVersion.current = baseVersionOverride;
         if (latestDraft.current === value) {
           latestDraft.current = null;
           setDraftState("saved");
@@ -398,18 +402,22 @@ export function ReportEditorClient({
       let current = (payload.currentReport ?? payload.report) as
         DailyReport | undefined;
       if (!current) {
-        const currentResponse = await fetch(
-          `/api/reports/${report.reportDate}`,
-          {
-            cache: "no-store",
-          },
-        );
-        const currentPayload = await readJson(currentResponse);
-        if (currentResponse.ok && currentPayload.report) {
-          current = currentPayload.report as DailyReport;
+        try {
+          const currentResponse = await fetch(`/api/reports/${report.reportDate}`, { cache: "no-store" });
+          const currentPayload = await readJson(currentResponse);
+          if (currentResponse.ok && currentPayload.report) {
+            current = currentPayload.report as DailyReport;
+          } else if (currentResponse.status === 404) {
+            setVerifiedConflictVersion(0);
+          } else {
+            setVerifiedConflictVersion(null);
+          }
+        } catch {
+          setVerifiedConflictVersion(null);
         }
       }
-      if (current) setPublished(current);
+      setPublished(current ?? null);
+      if (current) setVerifiedConflictVersion(current.version ?? null);
       setPublishing(false);
       setConflict(
         "รายงานนี้ถูกแก้ไขโดยผู้ใช้อื่นแล้ว ฉบับร่างของคุณยังอยู่ กรุณาตรวจสอบข้อมูลปัจจุบันก่อนบันทึกอีกครั้ง",
@@ -450,14 +458,14 @@ export function ReportEditorClient({
     setPublishing(false);
   };
   const rebaseDraft = async () => {
-    const currentVersion = published?.version;
+    const currentVersion = verifiedConflictVersion;
     const value = latestDraft.current ?? draft;
-    if (currentVersion === undefined || !value) return;
-    draftBaseVersion.current = currentVersion;
-    setConflict(null);
+    if (currentVersion === null || !value) return;
     latestDraft.current = value;
     try {
-      await persistLatestDraft();
+      await persistLatestDraft(currentVersion);
+      setConflict(null);
+      setVerifiedConflictVersion(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "ปรับฐานฉบับร่างไม่สำเร็จ");
     }
@@ -526,7 +534,8 @@ export function ReportEditorClient({
       }}
       onDraftChange={scheduleDraft}
       onDraftFlush={flushDraft}
-      onRebase={rebaseDraft}
+      onRebase={verifiedConflictVersion === null ? undefined : rebaseDraft}
+      rebaseLabel={verifiedConflictVersion === 0 ? "กู้ฉบับร่างเป็นรายงานใหม่" : undefined}
     />
   );
 }

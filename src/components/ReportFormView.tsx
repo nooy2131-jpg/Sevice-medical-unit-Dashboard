@@ -55,6 +55,7 @@ export interface ReportFormViewProps {
   onDraftChange?: (report: DailyReport) => void;
   onDraftFlush?: () => Promise<void>;
   onRebase?: () => Promise<void>;
+  rebaseLabel?: string;
 }
 
 const numberFields: NumberField[] = [
@@ -213,6 +214,7 @@ export function ReportFormView({
   onDraftChange,
   onDraftFlush,
   onRebase,
+  rebaseLabel = "ใช้เวอร์ชันปัจจุบันเป็นฐาน แล้วบันทึกฉบับร่างใหม่",
 }: ReportFormViewProps) {
   const source = draft ?? publishedReport;
   const [numbers, setNumbers] = useState<NumberValues>(() =>
@@ -368,7 +370,7 @@ export function ReportFormView({
               onClick={() => void onRebase()}
               className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
             >
-              ใช้เวอร์ชันปัจจุบันเป็นฐาน แล้วบันทึกฉบับร่างใหม่
+              {rebaseLabel}
             </button>
           )}
         </div>
