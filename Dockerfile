@@ -6,11 +6,15 @@ RUN bun install --frozen-lockfile
 FROM deps AS builder
 WORKDIR /app
 COPY . .
-ENV DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build
-# Build-time placeholder only; the runtime secret is injected by the deployment.
-ENV BETTER_AUTH_SECRET=build-only-secret-012345678901234567890123
-RUN bun run db:generate
-RUN bun run build
+# Next.js inlines NEXT_PUBLIC_* values during the build, so this must match the
+# public deployment origin instead of relying on a runtime environment value.
+ARG NEXT_PUBLIC_APP_URL=https://okr-unit.pskwr.com
+ENV NEXT_PUBLIC_APP_URL=${NEXT_PUBLIC_APP_URL}
+RUN DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build bun run db:generate
+# Give the build a one-use secret without persisting it as image configuration.
+RUN DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build \
+    BETTER_AUTH_SECRET="$(head -c 32 /dev/urandom | base64 | tr -d '\n')" \
+    bun run build
 
 # This target deliberately retains the Prisma CLI, schema, and migration files.
 # Run it as a reviewed migration Job; the normal app image never runs migrations.

@@ -10,3 +10,5 @@ spec:
           env:
             - name: BETTER_AUTH_URL
               value: https://okr-unit.pskwr.com
+            - name: BETTER_AUTH_TRUSTED_ORIGINS
+              value: https://okr-unit.pskwr.com

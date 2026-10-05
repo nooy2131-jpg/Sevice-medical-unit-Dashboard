@@ -179,7 +179,7 @@ export function DashboardView({
           <button
             type="button"
             onClick={() => onNewReport()}
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800"
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800"
           >
             <FilePlus2 className="h-4 w-4" />
             บันทึกวันนี้
@@ -320,7 +320,25 @@ export function DashboardView({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {visibleDates.map((date) => {
+              {visibleDates.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center sm:px-6">
+                    <p className="text-sm font-semibold text-slate-700">
+                      ยังไม่มีรายงานในช่วงนี้
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      เลือกช่วงอื่นหรือเริ่มบันทึกรายงานวันนี้
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onNewReport()}
+                      className="control-button mt-4"
+                    >
+                      บันทึกรายงาน
+                    </button>
+                  </td>
+                </tr>
+              ) : visibleDates.map((date) => {
                 const report = byDate.get(date);
                 const dayTotal = report
                   ? report.totalMale + report.totalFemale
@@ -356,7 +374,7 @@ export function DashboardView({
                         <button
                           type="button"
                           onClick={() => onEditDate(date)}
-                          className="inline-flex min-h-9 items-center gap-1 rounded-lg px-2 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                          className="inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-xs font-semibold text-teal-700 hover:bg-teal-50"
                         >
                           <Pencil className="h-3.5 w-3.5" />
                           แก้ไข
@@ -365,7 +383,7 @@ export function DashboardView({
                         <button
                           type="button"
                           onClick={() => onNewReport(date)}
-                          className="rounded-lg px-2 py-2 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                          className="inline-flex min-h-11 items-center rounded-lg px-3 text-xs font-semibold text-teal-700 hover:bg-teal-50"
                         >
                           เพิ่มรายงาน
                         </button>

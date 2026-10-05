@@ -371,7 +371,7 @@ export function ReportFormView({
           </p>
         </div>
         <div
-          className={`rounded-full border px-3 py-1.5 text-xs font-medium ${statusTone}`}
+          className={`max-w-full rounded-lg border px-3 py-2 text-sm font-medium leading-5 ${statusTone}`}
           aria-live="polite"
         >
           {statusCopy(saveState, errorMessage)}
@@ -387,7 +387,7 @@ export function ReportFormView({
             <button
               type="button"
               onClick={() => void onRebase()}
-              className="mt-3 rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+              className="control-button mt-3 border-amber-300 bg-white text-sm text-amber-900 hover:bg-amber-100"
             >
               {rebaseLabel}
             </button>
@@ -635,7 +635,7 @@ export function ReportFormView({
                 <button
                   type="button"
                   onClick={() => setConfirmDelete(true)}
-                  className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium text-rose-700 hover:bg-rose-50"
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-rose-700 hover:bg-rose-50"
                 >
                   <Trash2 className="h-4 w-4" />
                   ลบรายงานวันนี้
@@ -646,14 +646,14 @@ export function ReportFormView({
                   <button
                     type="button"
                     onClick={() => void onDelete(reportDate)}
-                    className="rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700"
+                    className="inline-flex min-h-11 items-center rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-700"
                   >
                     ยืนยันลบ
                   </button>
                   <button
                     type="button"
                     onClick={() => setConfirmDelete(false)}
-                    className="rounded-lg px-3 py-2 text-xs text-slate-600 hover:bg-slate-100"
+                    className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-slate-600 hover:bg-slate-100"
                   >
                     ยกเลิก
                   </button>

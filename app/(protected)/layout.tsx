@@ -21,10 +21,10 @@ export default async function ProtectedLayout({
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900">
       <header className="no-print sticky top-0 z-30 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6">
+        <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 sm:px-6">
           <Link
             href="/dashboard"
-            className="font-display text-base font-bold tracking-tight text-slate-950"
+            className="font-display max-w-full text-sm font-bold leading-tight tracking-tight text-slate-950 sm:text-base"
           >
             รพ.องครักษ์ · หน่วยบริการชั่วคราว
           </Link>

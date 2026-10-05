@@ -125,5 +125,75 @@ export default function SettingsPage() {
     }
   }
 
-  return <main className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6"><div className="mb-8"><h1 className="text-3xl font-bold tracking-tight text-slate-900">ตั้งค่าการใช้งาน</h1><p className="mt-2 text-slate-600">จัดการคำเชิญ สิทธิ์ และสถานะบัญชี</p></div>{status && <p role="status" className="mb-4 rounded-lg bg-teal-50 px-4 py-3 text-sm text-teal-800">{status}</p>}{error && <p role="alert" className="mb-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>}<section className="mb-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm"><h2 className="text-lg font-semibold text-slate-900">เชิญผู้ใช้งาน</h2><form onSubmit={invite} className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto_auto]"><label className="block text-sm font-medium text-slate-700" htmlFor="invite-email">อีเมลผู้รับคำเชิญ<input id="invite-email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5" /></label><label className="block text-sm font-medium text-slate-700" htmlFor="invite-role">สิทธิ์<select id="invite-role" value={role} onChange={(event) => setRole(event.target.value as Role)} className="mt-2 w-full rounded-lg border border-slate-300 px-3 py-2.5"><option value="member">Member</option><option value="admin">Admin</option></select></label><button disabled={busyAction !== null} className="self-end rounded-lg bg-teal-700 px-4 py-2.5 font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60">{busyAction === 'invite' ? 'กำลังส่ง…' : 'ส่งคำเชิญ'}</button></form></section><section className="mb-8 rounded-xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-200 px-5 py-4"><h2 className="text-lg font-semibold text-slate-900">บัญชีผู้ใช้งาน</h2></div>{loading ? <p className="p-5 text-sm text-slate-500">กำลังโหลด…</p> : <div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-semibold">ผู้ใช้</th><th className="px-5 py-3 font-semibold">สิทธิ์</th><th className="px-5 py-3 font-semibold">สถานะ</th><th className="px-5 py-3 font-semibold">จัดการ</th></tr></thead><tbody className="divide-y divide-slate-200">{users.map((user) => { const action: BusyAction = `user:${user.id}`; return <tr key={user.id}><td className="px-5 py-4"><p className="font-medium text-slate-900">{user.name}</p><p className="text-slate-500">{user.email}</p></td><td className="px-5 py-4"><select aria-label={`สิทธิ์ของ ${user.email}`} disabled={busyAction !== null} value={user.role} onChange={(event) => void updateUser(user, { role: event.target.value as Role })} className="rounded-md border border-slate-300 px-2 py-1"><option value="member">Member</option><option value="admin">Admin</option></select></td><td className="px-5 py-4"><span className={user.active ? 'text-teal-700' : 'text-slate-500'}>{user.active ? 'ใช้งานอยู่' : 'ปิดการใช้งาน'}</span></td><td className="px-5 py-4"><button type="button" disabled={busyAction !== null} onClick={() => void updateUser(user, { active: !user.active })} className="font-semibold text-teal-700 underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60">{busyAction === action ? 'กำลังบันทึก…' : user.active ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน'}</button></td></tr>; })}</tbody></table></div>}</section><section className="rounded-xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-200 px-5 py-4"><h2 className="text-lg font-semibold text-slate-900">คำเชิญล่าสุด</h2></div><div className="overflow-x-auto"><table className="min-w-full text-left text-sm"><thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-semibold">อีเมล</th><th className="px-5 py-3 font-semibold">สิทธิ์</th><th className="px-5 py-3 font-semibold">หมดอายุ</th><th className="px-5 py-3 font-semibold">สถานะ</th><th className="px-5 py-3 font-semibold">จัดการ</th></tr></thead><tbody className="divide-y divide-slate-200">{invitations.map((invitation) => { const resendAction: BusyAction = `resend:${invitation.id}`; const revokeAction: BusyAction = `revoke:${invitation.id}`; return <tr key={invitation.id}><td className="px-5 py-4 text-slate-900">{invitation.email}</td><td className="px-5 py-4">{invitation.role}</td><td className="px-5 py-4 text-slate-600">{new Date(invitation.expiresAt).toLocaleDateString('th-TH')}</td><td className="px-5 py-4">{invitation.consumedAt ? 'ใช้แล้ว' : invitation.revokedAt ? 'ยกเลิกแล้ว' : 'รอดำเนินการ'}</td><td className="px-5 py-4"><div className="flex gap-3">{!invitation.consumedAt && !invitation.revokedAt && <><button type="button" disabled={busyAction !== null} onClick={() => void resend(invitation.id)} className="font-semibold text-teal-700 underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60">{busyAction === resendAction ? 'กำลังส่ง…' : 'ส่งอีกครั้ง'}</button><button type="button" disabled={busyAction !== null} onClick={() => void revoke(invitation.id)} className="font-semibold text-rose-700 underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60">{busyAction === revokeAction ? 'กำลังยกเลิก…' : 'ยกเลิก'}</button></>}</div></td></tr>; })}</tbody></table></div></section></main>;
+  return (
+    <section className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 lg:py-10" aria-labelledby="settings-title">
+      <div className="mb-8">
+        <h1 id="settings-title" className="text-3xl font-bold tracking-tight text-slate-900">ตั้งค่าการใช้งาน</h1>
+        <p className="mt-2 text-slate-600">จัดการคำเชิญ สิทธิ์ และสถานะบัญชี</p>
+      </div>
+
+      {status && <p role="status" className="mb-4 rounded-lg bg-teal-50 px-4 py-3 text-sm text-teal-800">{status}</p>}
+      {error && <p role="alert" className="mb-4 rounded-lg bg-rose-50 px-4 py-3 text-sm text-rose-800">{error}</p>}
+
+      <section className="mb-8 rounded-xl border border-slate-200 bg-white p-5 shadow-sm sm:p-6" aria-labelledby="invite-title">
+        <h2 id="invite-title" className="text-lg font-semibold text-slate-900">เชิญผู้ใช้งาน</h2>
+        <p className="mt-1 text-sm text-slate-600">ส่งคำเชิญให้ผู้ร่วมงานเข้าถึงระบบตามสิทธิ์ที่กำหนด</p>
+        <form onSubmit={invite} className="mt-5 grid gap-4 sm:grid-cols-[minmax(0,1fr)_minmax(10rem,0.4fr)_auto] sm:items-end">
+          <label className="field-label" htmlFor="invite-email">
+            อีเมลผู้รับคำเชิญ
+            <input id="invite-email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="name@example.com" className="control-input mt-1 w-full" />
+          </label>
+          <label className="field-label" htmlFor="invite-role">
+            สิทธิ์
+            <select id="invite-role" value={role} onChange={(event) => setRole(event.target.value as Role)} className="control-select mt-1 w-full">
+              <option value="member">Member</option>
+              <option value="admin">Admin</option>
+            </select>
+          </label>
+          <button type="submit" disabled={busyAction !== null} className="control-button min-h-11 w-full bg-teal-700 text-white hover:bg-teal-800 sm:w-auto">
+            {busyAction === 'invite' ? 'กำลังส่ง…' : 'ส่งคำเชิญ'}
+          </button>
+        </form>
+      </section>
+
+      <section className="mb-8 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="users-title">
+        <div className="border-b border-slate-200 px-5 py-4 sm:px-6">
+          <h2 id="users-title" className="text-lg font-semibold text-slate-900">บัญชีผู้ใช้งาน</h2>
+          <p className="mt-1 text-sm text-slate-600">ปรับสิทธิ์หรือสถานะการใช้งานของสมาชิก</p>
+        </div>
+        {loading ? <p className="p-5 text-sm text-slate-500 sm:p-6" role="status">กำลังโหลด…</p> : users.length === 0 ? <p className="p-5 text-sm text-slate-500 sm:p-6">ยังไม่มีบัญชีผู้ใช้งาน</p> : <div className="overflow-x-auto">
+          <table className="min-w-[40rem] w-full text-left text-sm">
+            <thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-semibold sm:px-6">ผู้ใช้</th><th className="px-5 py-3 font-semibold sm:px-6">สิทธิ์</th><th className="px-5 py-3 font-semibold sm:px-6">สถานะ</th><th className="px-5 py-3 font-semibold sm:px-6">จัดการ</th></tr></thead>
+            <tbody className="divide-y divide-slate-200">
+              {users.map((user) => {
+                const action: BusyAction = `user:${user.id}`;
+                return <tr key={user.id}>
+                  <td className="px-5 py-4 sm:px-6"><p className="font-medium text-slate-900">{user.name}</p><p className="text-slate-500">{user.email}</p></td>
+                  <td className="px-5 py-4 sm:px-6"><label className="sr-only" htmlFor={`user-role-${user.id}`}>สิทธิ์ของ {user.email}</label><select id={`user-role-${user.id}`} disabled={busyAction !== null} value={user.role} onChange={(event) => void updateUser(user, { role: event.target.value as Role })} className="control-select min-w-32"><option value="member">Member</option><option value="admin">Admin</option></select></td>
+                  <td className="px-5 py-4 sm:px-6"><span className={user.active ? 'text-teal-700' : 'text-slate-500'}>{user.active ? 'ใช้งานอยู่' : 'ปิดการใช้งาน'}</span></td>
+                  <td className="px-5 py-4 sm:px-6"><button type="button" disabled={busyAction !== null} onClick={() => void updateUser(user, { active: !user.active })} className="min-h-11 font-semibold text-teal-700 underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60">{busyAction === action ? 'กำลังบันทึก…' : user.active ? 'ปิดการใช้งาน' : 'เปิดการใช้งาน'}</button></td>
+                </tr>;
+              })}
+            </tbody>
+          </table>
+        </div>}
+      </section>
+
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm" aria-labelledby="invitations-title">
+        <div className="border-b border-slate-200 px-5 py-4 sm:px-6"><h2 id="invitations-title" className="text-lg font-semibold text-slate-900">คำเชิญล่าสุด</h2><p className="mt-1 text-sm text-slate-600">ตรวจสอบสถานะและจัดการคำเชิญที่ส่งไป</p></div>
+        {loading ? <p className="p-5 text-sm text-slate-500 sm:p-6" role="status">กำลังโหลด…</p> : invitations.length === 0 ? <p className="p-5 text-sm text-slate-500 sm:p-6">ยังไม่มีคำเชิญ</p> : <div className="overflow-x-auto">
+          <table className="min-w-[48rem] w-full text-left text-sm">
+            <thead className="bg-slate-50 text-slate-600"><tr><th className="px-5 py-3 font-semibold sm:px-6">อีเมล</th><th className="px-5 py-3 font-semibold sm:px-6">สิทธิ์</th><th className="px-5 py-3 font-semibold sm:px-6">หมดอายุ</th><th className="px-5 py-3 font-semibold sm:px-6">สถานะ</th><th className="px-5 py-3 font-semibold sm:px-6">จัดการ</th></tr></thead>
+            <tbody className="divide-y divide-slate-200">
+              {invitations.map((invitation) => {
+                const resendAction: BusyAction = `resend:${invitation.id}`;
+                const revokeAction: BusyAction = `revoke:${invitation.id}`;
+                return <tr key={invitation.id}><td className="px-5 py-4 text-slate-900 sm:px-6">{invitation.email}</td><td className="px-5 py-4 sm:px-6">{invitation.role}</td><td className="px-5 py-4 text-slate-600 sm:px-6">{new Date(invitation.expiresAt).toLocaleDateString('th-TH')}</td><td className="px-5 py-4 sm:px-6">{invitation.consumedAt ? 'ใช้แล้ว' : invitation.revokedAt ? 'ยกเลิกแล้ว' : 'รอดำเนินการ'}</td><td className="px-5 py-4 sm:px-6"><div className="flex min-h-11 items-center gap-3">{!invitation.consumedAt && !invitation.revokedAt && <><button type="button" disabled={busyAction !== null} onClick={() => void resend(invitation.id)} className="inline-flex min-h-11 items-center font-semibold text-teal-700 underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60">{busyAction === resendAction ? 'กำลังส่ง…' : 'ส่งอีกครั้ง'}</button><button type="button" disabled={busyAction !== null} onClick={() => void revoke(invitation.id)} className="inline-flex min-h-11 items-center font-semibold text-rose-700 underline underline-offset-4 disabled:cursor-not-allowed disabled:opacity-60">{busyAction === revokeAction ? 'กำลังยกเลิก…' : 'ยกเลิก'}</button></>}</div></td></tr>;
+              })}
+            </tbody>
+          </table>
+        </div>}
+      </section>
+    </section>
+  );
 }

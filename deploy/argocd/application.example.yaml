@@ -1,20 +1,20 @@
-# Example only. Register this Application in the GitOps repository after choosing
-# the repository URL, revision, and cluster project policy.
+# Example only. Replace the source SHA with the reviewed immutable commit and
+# use the restricted okr-unit AppProject from the homelab GitOps repository.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
   name: okr-unit
   namespace: argocd
 spec:
-  project: default
+  project: okr-unit
   source:
-    repoURL: https://github.com/REPLACE_WITH_OWNER/REPLACE_WITH_REPOSITORY.git
-    targetRevision: main
-    path: deploy/overlays/prod
+    repoURL: https://github.com/nooy2131-jpg/Sevice-medical-unit-Dashboard.git
+    targetRevision: REPLACE_WITH_REVIEWED_SOURCE_SHA
+    path: deploy/overlays/prod-secrets
   destination:
     server: https://kubernetes.default.svc
     namespace: okr-unit
   syncPolicy:
     automated:
-      prune: false
+      prune: true
       selfHeal: true

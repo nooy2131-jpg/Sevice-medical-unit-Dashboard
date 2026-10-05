@@ -29,16 +29,4 @@ Browser workflows are defined in `e2e/` and run separately with `bun run test:e2
 
 ## Deployment
 
-Build and push immutable app and migration image digests (`docker build --target runner ...` and `docker build --target migrate ...`). Replace `REPLACE_WITH_DIGEST` and `REPLACE_WITH_MIGRATION_DIGEST` in the `@sha256:` image references only through the GitOps review process. Inject runtime variables through the cluster's Infisical-managed `okr-unit-runtime` Secret and use a separate least-privilege migration credential in `okr-unit-migration`.
-
-Run the migration Job deliberately after replacing the image digest and reviewing database compatibility. Select the intended cluster and namespace explicitly:
-
-```sh
-KUBECONFIG="$HOME/.kube/hp01.yaml" kubectl -n okr-unit apply -f deploy/base/migration-job.yaml
-```
-
-The normal app container does not run migrations or bootstrap an Admin. Configure the Cloudflare tunnel to route `okr-unit.pskwr.com` to the Service and register the Google callback `https://okr-unit.pskwr.com/api/auth/callback/google`. An ArgoCD application registration belongs in the GitOps repository; this repository only supplies the base and production overlay.
-
-Use the Supabase session pooler if the cluster has no IPv6 route to the direct database endpoint. Configure verified PostgreSQL TLS and a trusted CA where required. Provision a restricted runtime database role separately from the migration role; grant runtime access only to application tables. The migrations revoke Supabase anonymous/authenticated Data API access to these server-only tables.
-
-Before promotion, confirm the image architecture matches the selected node or publish a multi-architecture image, configure registry access and Infisical project paths, verify sender-domain ownership in Resend, and establish a database backup/restore procedure. Keep the previous app digest and assess schema compatibility before rollback; an image rollback does not undo migrations.
+Follow [the production release runbook](deploy/README.md). Argo CD in the homelab GitOps repository owns cluster state; do not apply deployment manifests directly with `kubectl`.

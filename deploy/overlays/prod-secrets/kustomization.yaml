@@ -3,8 +3,4 @@ kind: Kustomization
 namespace: okr-unit
 resources:
   - namespace.yaml
-  - service.yaml
-  - deployment.yaml
-  - migration-job.yaml
   - infisical-secret.yaml
-  - ingress.yaml

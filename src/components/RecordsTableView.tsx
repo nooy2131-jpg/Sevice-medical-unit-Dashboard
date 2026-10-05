@@ -276,7 +276,7 @@ export function RecordsTableView({
             <select
               value={sort}
               onChange={(event) => setSort(event.target.value as typeof sort)}
-              className="control-input text-sm"
+              className="control-select text-sm"
             >
               <option value="date-desc">วันที่ล่าสุดก่อน</option>
               <option value="date-asc">วันที่เก่าสุดก่อน</option>
@@ -314,6 +314,7 @@ export function RecordsTableView({
             type="button"
             onClick={() => void onExportCsv()}
             className="control-button"
+            disabled={reports.length === 0}
           >
             <Download className="h-4 w-4" />
             ส่งออก CSV
@@ -378,7 +379,29 @@ export function RecordsTableView({
                     colSpan={11}
                     className="px-4 py-12 text-center text-sm text-slate-500"
                   >
-                    ยังไม่มีข้อมูลรายงาน
+                    {reports.length === 0 ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <p>ยังไม่มีข้อมูลรายงาน</p>
+                        <button
+                          type="button"
+                          onClick={openSelectedDate}
+                          className="control-button"
+                        >
+                          เปิดรายงานวันที่เลือก
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3">
+                        <p>ไม่พบรายงานที่ตรงกับคำค้น</p>
+                        <button
+                          type="button"
+                          onClick={() => setQuery("")}
+                          className="control-button"
+                        >
+                          ล้างคำค้น
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (

@@ -60,3 +60,11 @@ Pending-draft recovery uses browser session storage as a fallback, while the ser
 4. Verify the production database and deployment controls described in `PLAN.md`.
 
 Legacy manually edited CSV cells beginning with an apostrophe before a formula are ambiguous: they may represent literal text or the old spreadsheet protection format. The reversible escape applies to exports produced by the updated application; review legacy import previews before overwriting reports.
+
+## UX/UI refinement after first draft
+
+The first-draft checkpoint is commit `06ea1ad`. Ping selected native dropdowns and whole-app refinement while preserving the teal/slate identity. This follow-up standardizes native select, input, and button styling; adds 44px control heights, keyboard focus, disabled states, and a forced-colors native-select fallback; keeps the header stacked below the large breakpoint; and exposes accurate current-page navigation semantics.
+
+Settings and authentication surfaces now share the control treatment, persistent labels, responsive spacing, and loading/empty feedback. History distinguishes an empty dataset from an unmatched search and offers the appropriate recovery action. Missing reset tokens offer a new reset-link request. Report recovery and destructive actions have larger touch targets. Existing domain behavior remains in place.
+
+Local lint, strict typecheck, production build, whitespace checks, and the static UI detector passed during this refinement. Lint retains two existing configuration warnings. Narrow final recovery-link and touch-target fixes passed targeted lint and strict typecheck. Browser rendering and interactions remain unverified under the previously selected browser-QA boundary; static checks do not establish visual quality or WCAG compliance.

@@ -4,7 +4,10 @@ metadata:
   name: okr-unit-migrate
   namespace: okr-unit
   annotations:
-    description: "Run manually after reviewing the image and database compatibility; never part of normal app startup."
+    argocd.argoproj.io/hook: PreSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "0"
+    okr-unit.pskwr.com/description: "Generate Prisma Client, apply reviewed migrations, then initialize the first Admin before app rollout."
 spec:
   backoffLimit: 1
   template:
@@ -15,9 +18,12 @@ spec:
       restartPolicy: Never
       containers:
         - name: migrate
-          image: ghcr.io/pingsunn/okr-unit-migrate@sha256:REPLACE_WITH_MIGRATION_DIGEST
+          image: ghcr.io/nooy2131-jpg/okr-unit-migrate@sha256:REPLACE_WITH_MIGRATION_DIGEST
           imagePullPolicy: IfNotPresent
-          command: ["bun", "run", "prisma", "migrate", "deploy"]
+          command:
+            - sh
+            - -c
+            - bun run db:generate && bun run db:deploy && bun run bootstrap-admin
           envFrom:
             - secretRef:
                 name: okr-unit-migration

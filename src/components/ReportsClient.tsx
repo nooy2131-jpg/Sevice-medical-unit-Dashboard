@@ -785,8 +785,8 @@ export function ReportEditorClient({
             <p>ข้อมูลบน server: <strong>{draftSummary(draft ?? published)}</strong></p>
           </div>
           <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" onClick={recoverPendingDraft} className="rounded-lg bg-amber-800 px-3 py-2 text-xs font-semibold text-white">กู้ฉบับร่างของฉัน</button>
-            <button type="button" onClick={useServerDraft} className="rounded-lg border border-amber-300 bg-white px-3 py-2 text-xs font-semibold text-amber-900">ใช้ข้อมูลจาก server</button>
+            <button type="button" onClick={recoverPendingDraft} className="min-h-11 rounded-lg bg-amber-800 px-4 py-2 text-xs font-semibold text-white">กู้ฉบับร่างของฉัน</button>
+            <button type="button" onClick={useServerDraft} className="min-h-11 rounded-lg border border-amber-300 bg-white px-4 py-2 text-xs font-semibold text-amber-900">ใช้ข้อมูลจาก server</button>
           </div>
         </div>
       )}

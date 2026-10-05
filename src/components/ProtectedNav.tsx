@@ -25,10 +25,11 @@ export function ProtectedNav({ user }: { user: User }) {
     href.startsWith("/reports/")
       ? pathname.startsWith("/reports/")
       : pathname.startsWith(href);
+  const isLinkCurrent = (href: string) => pathname === href;
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex w-full min-w-0 flex-col gap-3 lg:w-auto lg:flex-row lg:items-center lg:gap-3">
       <nav
-        className="hidden items-center gap-5 text-sm font-semibold text-slate-600 sm:flex"
+        className="hidden items-center gap-5 text-sm font-semibold text-slate-600 lg:flex"
         aria-label="เมนูหลัก"
       >
         {links.map((link) => (
@@ -40,13 +41,14 @@ export function ProtectedNav({ user }: { user: User }) {
                 ? "text-teal-700 underline decoration-2 underline-offset-8"
                 : "hover:text-slate-950"
             }
+            aria-current={isLinkCurrent(link.href) ? "page" : undefined}
           >
             {link.label}
           </Link>
         ))}
       </nav>
       <nav
-        className="flex max-w-[48vw] items-center gap-3 overflow-x-auto whitespace-nowrap text-xs font-semibold text-slate-600 sm:hidden"
+        className="flex w-full min-w-0 items-center gap-4 overflow-x-auto border-y border-slate-100 py-1 whitespace-nowrap text-sm font-semibold text-slate-600 lg:hidden"
         aria-label="เมนูหลักบนมือถือ"
       >
         {links.map((link) => (
@@ -55,9 +57,10 @@ export function ProtectedNav({ user }: { user: User }) {
             href={link.href}
             className={
               isLinkActive(link.href)
-                ? "text-teal-700"
-                : "hover:text-slate-950"
+                ? "inline-flex min-h-11 shrink-0 items-center text-teal-700"
+                : "inline-flex min-h-11 shrink-0 items-center hover:text-slate-950"
             }
+            aria-current={isLinkCurrent(link.href) ? "page" : undefined}
           >
             {link.label}
           </Link>
@@ -78,7 +81,7 @@ export function ProtectedNav({ user }: { user: User }) {
           router.replace("/login");
           router.refresh();
         }}
-        className="control-button px-3"
+        className="control-button w-full shrink-0 px-3 lg:w-auto"
       >
         ออกจากระบบ
       </button>
