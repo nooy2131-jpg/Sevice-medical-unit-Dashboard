@@ -1,817 +1,705 @@
-import React, { useEffect, useMemo, useState } from 'react';
-import { DailyReport, ReportsMap, TopItem, formatThaiDate, normalizeTopItems } from '../types/report';
-import { DISEASE_PRESETS, PROCEDURE_PRESETS } from '../data/seedReports';
+"use client";
+
+import { useEffect, useRef, useState } from "react";
 import {
-  Calculator,
   Check,
   ChevronLeft,
   ChevronRight,
-  History,
-  RefreshCw,
   RotateCcw,
   Trash2,
-} from 'lucide-react';
+} from "lucide-react";
+import { DISEASE_PRESETS, PROCEDURE_PRESETS } from "../data/seedReports";
+import { isCalendarDate, shiftDate } from "../lib/dates";
+import {
+  DailyReport,
+  ReportSaveState,
+  TopItem,
+  formatBangkokTimestamp,
+  formatThaiDate,
+  normalizeTopItems,
+} from "../types/report";
 
-interface ReportFormViewProps {
-  reportsMap: ReportsMap;
-  initialDate: string;
-  onSave: (report: DailyReport, navigateToDashboard?: boolean) => void;
-  onDelete: (dateStr: string) => void;
-  onCancel: () => void;
+type NumberField =
+  | "totalMale"
+  | "totalFemale"
+  | "thaiMale"
+  | "thaiFemale"
+  | "genMale"
+  | "genFemale"
+  | "procMale"
+  | "procFemale"
+  | "refillMale"
+  | "refillFemale"
+  | "referDocMale"
+  | "referDocFemale"
+  | "admitMale"
+  | "admitFemale"
+  | "referOutMale"
+  | "referOutFemale";
+type NumberValues = Record<NumberField, number>;
+
+export interface ReportFormViewProps {
+  reportDate: string;
+  publishedReport?: DailyReport | null;
+  draft?: DailyReport | null;
+  canDelete?: boolean;
+  saveState?: ReportSaveState;
+  errorMessage?: string | null;
+  publishErrorMessage?: string | null;
+  isPublishing?: boolean;
+  conflictMessage?: string | null;
+  disabled?: boolean;
+  onDateChange?: (date: string) => void;
+  onSave: (report: DailyReport) => Promise<void>;
+  onDelete?: (date: string) => Promise<void>;
+  onCancel?: () => void;
+  onDraftChange?: (report: DailyReport) => void;
+  onDraftFlush?: () => Promise<void>;
+  onRebase?: () => Promise<void>;
+  rebaseLabel?: string;
 }
 
-const EMPTY_FIVE_ITEMS = (): TopItem[] => [
-  { name: '', count: 0, male: 0, female: 0 },
-  { name: '', count: 0, male: 0, female: 0 },
-  { name: '', count: 0, male: 0, female: 0 },
-  { name: '', count: 0, male: 0, female: 0 },
-  { name: '', count: 0, male: 0, female: 0 },
+const numberFields: NumberField[] = [
+  "totalMale",
+  "totalFemale",
+  "thaiMale",
+  "thaiFemale",
+  "genMale",
+  "genFemale",
+  "procMale",
+  "procFemale",
+  "refillMale",
+  "refillFemale",
+  "referDocMale",
+  "referDocFemale",
+  "admitMale",
+  "admitFemale",
+  "referOutMale",
+  "referOutFemale",
 ];
+const EMPTY_NUMBERS: NumberValues = Object.fromEntries(
+  numberFields.map((key) => [key, 0]),
+) as NumberValues;
+const metricGroups: Array<{
+  title: string;
+  subtitle: string;
+  mKey: NumberField;
+  fKey: NumberField;
+}> = [
+  {
+    title: "ผู้รับบริการทั้งหมด",
+    subtitle: "ยอดรวมผู้มารับบริการทั้งหมดประจำวัน",
+    mKey: "totalMale",
+    fKey: "totalFemale",
+  },
+  {
+    title: "แพทย์แผนไทย",
+    subtitle: "ตรวจรักษา นวด ประคบ อบสมุนไพร และจ่ายยาสมุนไพร",
+    mKey: "thaiMale",
+    fKey: "thaiFemale",
+  },
+  {
+    title: "ตรวจโรคทั่วไป (OPD)",
+    subtitle: "ผู้ป่วยนอกตรวจรักษาโรคทั่วไป",
+    mKey: "genMale",
+    fKey: "genFemale",
+  },
+  {
+    title: "ทำหัตถการ",
+    subtitle: "ทำแผล ฉีดยา พ่นยา เย็บแผล และตัดไหม",
+    mKey: "procMale",
+    fKey: "procFemale",
+  },
+  {
+    title: "รับยาต่อเนื่อง / เติมยาเดิม",
+    subtitle: "คลินิกโรคเรื้อรังและรับยาเดิมตามนัด",
+    mKey: "refillMale",
+    fKey: "refillFemale",
+  },
+  {
+    title: "ขอใบส่งตัว",
+    subtitle: "ผู้ป่วยติดต่อขอหนังสือส่งตัวรักษาต่อ",
+    mKey: "referDocMale",
+    fKey: "referDocFemale",
+  },
+  {
+    title: "รับไว้รักษาใน รพ. (Admit)",
+    subtitle: "ผู้ป่วยรับไว้เป็นผู้ป่วยในของโรงพยาบาล",
+    mKey: "admitMale",
+    fKey: "admitFemale",
+  },
+  {
+    title: "ส่งต่อรักษาที่อื่น (Refer Out)",
+    subtitle: "ส่งตัวฉุกเฉินหรือส่งต่อไปโรงพยาบาลอื่น",
+    mKey: "referOutMale",
+    fKey: "referOutFemale",
+  },
+];
+const emptyItems = (): TopItem[] =>
+  Array.from({ length: 5 }, () => ({ name: "", count: 0, male: 0, female: 0 }));
 
-function padToFive(items: TopItem[]): TopItem[] {
-  const normalized = normalizeTopItems(items);
-  const result: TopItem[] = [];
-  for (let i = 0; i < 5; i++) {
-    if (normalized[i]) {
-      result.push({
-        name: normalized[i].name,
-        count: normalized[i].count,
-        male: normalized[i].male || 0,
-        female: normalized[i].female || 0,
-      });
-    } else {
-      result.push({ name: '', count: 0, male: 0, female: 0 });
-    }
-  }
-  return result;
+function valuesFromReport(report?: DailyReport | null): NumberValues {
+  return numberFields.reduce(
+    (values, key) => {
+      values[key] = Number(report?.[key]) || 0;
+      return values;
+    },
+    { ...EMPTY_NUMBERS },
+  );
 }
 
-function getCurrentTimestamp(): string {
-  const now = new Date();
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(
-    now.getHours()
-  )}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+function itemsFromReport(items?: TopItem[]): TopItem[] {
+  const normalized = normalizeTopItems(items ?? []);
+  return Array.from(
+    { length: 5 },
+    (_, index) =>
+      normalized[index] ?? { name: "", count: 0, male: 0, female: 0 },
+  );
 }
 
-export const ReportFormView: React.FC<ReportFormViewProps> = ({
-  reportsMap,
-  initialDate,
+function makeReport(
+  reportDate: string,
+  numbers: NumberValues,
+  diseases: TopItem[],
+  procedures: TopItem[],
+  note: string,
+  version?: number,
+): DailyReport {
+  const clean = (items: TopItem[]) =>
+    items
+      .filter((item) => item.name.trim())
+      .map((item) => ({
+        name: item.name.trim(),
+        count: Math.max(0, Number(item.count) || 0),
+        male: Math.max(0, Number(item.male) || 0),
+        female: Math.max(0, Number(item.female) || 0),
+      }))
+      .sort((a, b) => b.count - a.count);
+  return {
+    reportDate,
+    ...numbers,
+    topDiseases: clean(diseases),
+    topProcedures: clean(procedures),
+    reporterNote: note.trim(),
+    updatedAt: new Date().toISOString(),
+    version,
+  };
+}
+
+function statusCopy(
+  state: ReportSaveState | undefined,
+  error?: string | null,
+): string {
+  if (state === "loading") return "กำลังโหลดข้อมูล…";
+  if (state === "saving") return "กำลังบันทึกฉบับร่าง…";
+  if (state === "saved") return "บันทึกฉบับร่างแล้ว";
+  if (state === "conflict") return "ข้อมูลเผยแพร่มีการเปลี่ยนแปลง";
+  if (state === "error") return error || "บันทึกฉบับร่างไม่สำเร็จ";
+  return "ฉบับร่างยังไม่เผยแพร่";
+}
+
+export function ReportFormView({
+  reportDate,
+  publishedReport,
+  draft,
+  canDelete = false,
+  saveState = "idle",
+  errorMessage,
+  publishErrorMessage,
+  isPublishing = false,
+  conflictMessage,
+  disabled = false,
+  onDateChange,
   onSave,
   onDelete,
   onCancel,
-}) => {
-  const [reportDate, setReportDate] = useState<string>(
-    initialDate || new Date().toISOString().slice(0, 10)
+  onDraftChange,
+  onDraftFlush,
+  onRebase,
+  rebaseLabel = "ใช้เวอร์ชันปัจจุบันเป็นฐาน แล้วบันทึกฉบับร่างใหม่",
+}: ReportFormViewProps) {
+  const source = draft ?? publishedReport;
+  const [numbers, setNumbers] = useState<NumberValues>(() =>
+    valuesFromReport(source),
   );
-
-  const [autoSumTotal, setAutoSumTotal] = useState<boolean>(true);
-
-  const [numbers, setNumbers] = useState({
-    totalMale: 0,
-    totalFemale: 0,
-    thaiMale: 0,
-    thaiFemale: 0,
-    genMale: 0,
-    genFemale: 0,
-    procMale: 0,
-    procFemale: 0,
-    refillMale: 0,
-    refillFemale: 0,
-    referDocMale: 0,
-    referDocFemale: 0,
-    admitMale: 0,
-    admitFemale: 0,
-    referOutMale: 0,
-    referOutFemale: 0,
-  });
-
-  const [topDiseases, setTopDiseases] = useState<TopItem[]>(EMPTY_FIVE_ITEMS);
-  const [topProcedures, setTopProcedures] = useState<TopItem[]>(EMPTY_FIVE_ITEMS);
-  const [reporterNote, setReporterNote] = useState<string>('');
-  const [confirmDelete, setConfirmDelete] = useState<boolean>(false);
-  const [lastAutoSavedAt, setLastAutoSavedAt] = useState<string>('');
-
-  const savedDatesDesc = useMemo(
-    () => Object.keys(reportsMap).sort((a, b) => b.localeCompare(a)),
-    [reportsMap]
+  const [diseases, setDiseases] = useState<TopItem[]>(() =>
+    itemsFromReport(source?.topDiseases),
   );
-
-  const existingRecord = reportsMap[reportDate];
+  const [procedures, setProcedures] = useState<TopItem[]>(() =>
+    itemsFromReport(source?.topProcedures),
+  );
+  const [note, setNote] = useState(source?.reporterNote ?? "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const draftGeneration = useRef(0);
+  const hydratedKey = useRef<string | null>(null);
 
   useEffect(() => {
-    if (initialDate) {
-      setReportDate(initialDate);
-    }
-  }, [initialDate]);
-
-  // Load record into form ONLY when switching reportDate
-  useEffect(() => {
+    const nextSource = draft ?? publishedReport;
+    const sourceKey = `${reportDate}:${publishedReport?.version ?? "new"}:${draft ? "draft" : "published"}`;
+    if (hydratedKey.current === sourceKey) return;
+    hydratedKey.current = sourceKey;
+    setNumbers(valuesFromReport(nextSource));
+    setDiseases(itemsFromReport(nextSource?.topDiseases));
+    setProcedures(itemsFromReport(nextSource?.topProcedures));
+    setNote(nextSource?.reporterNote ?? "");
     setConfirmDelete(false);
-    setLastAutoSavedAt('');
-    const rec = reportsMap[reportDate];
-    if (rec) {
-      setNumbers({
-        totalMale: Number(rec.totalMale) || 0,
-        totalFemale: Number(rec.totalFemale) || 0,
-        thaiMale: Number(rec.thaiMale) || 0,
-        thaiFemale: Number(rec.thaiFemale) || 0,
-        genMale: Number(rec.genMale) || 0,
-        genFemale: Number(rec.genFemale) || 0,
-        procMale: Number(rec.procMale) || 0,
-        procFemale: Number(rec.procFemale) || 0,
-        refillMale: Number(rec.refillMale) || 0,
-        refillFemale: Number(rec.refillFemale) || 0,
-        referDocMale: Number(rec.referDocMale) || 0,
-        referDocFemale: Number(rec.referDocFemale) || 0,
-        admitMale: Number(rec.admitMale) || 0,
-        admitFemale: Number(rec.admitFemale) || 0,
-        referOutMale: Number(rec.referOutMale) || 0,
-        referOutFemale: Number(rec.referOutFemale) || 0,
-      });
-      setTopDiseases(padToFive(rec.topDiseases));
-      setTopProcedures(padToFive(rec.topProcedures));
-      setReporterNote(rec.reporterNote || '');
-    } else {
-      setNumbers({
-        totalMale: 0,
-        totalFemale: 0,
-        thaiMale: 0,
-        thaiFemale: 0,
-        genMale: 0,
-        genFemale: 0,
-        procMale: 0,
-        procFemale: 0,
-        refillMale: 0,
-        refillFemale: 0,
-        referDocMale: 0,
-        referDocFemale: 0,
-        admitMale: 0,
-        admitFemale: 0,
-        referOutMale: 0,
-        referOutFemale: 0,
-      });
-      setTopDiseases(EMPTY_FIVE_ITEMS());
-      setTopProcedures(EMPTY_FIVE_ITEMS());
-      setReporterNote('');
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [reportDate]);
+    draftGeneration.current += 1;
+  }, [reportDate, draft, publishedReport]);
 
-  const buildReportPayload = (
-    nextNumbers: typeof numbers,
+  const emitDraft = (
+    nextNumbers: NumberValues,
     nextDiseases: TopItem[],
     nextProcedures: TopItem[],
     nextNote: string,
-    sortTopLists = false
-  ): DailyReport => {
-    const cleanedDiseases = nextDiseases
-      .filter((d) => d.name.trim().length > 0)
-      .map((d) => ({
-        name: d.name.trim(),
-        count: Number(d.count) || 0,
-        male: d.male || 0,
-        female: d.female || 0,
-      }));
-    if (sortTopLists) {
-      cleanedDiseases.sort((a, b) => b.count - a.count);
-    }
-
-    const cleanedProcedures = nextProcedures
-      .filter((p) => p.name.trim().length > 0)
-      .map((p) => ({
-        name: p.name.trim(),
-        count: Number(p.count) || 0,
-        male: p.male || 0,
-        female: p.female || 0,
-      }));
-    if (sortTopLists) {
-      cleanedProcedures.sort((a, b) => b.count - a.count);
-    }
-
-    const updatedAt = getCurrentTimestamp();
-    return {
-      reportDate,
-      ...nextNumbers,
-      topDiseases: cleanedDiseases,
-      topProcedures: cleanedProcedures,
-      reporterNote: nextNote.trim(),
-      updatedAt,
-    };
-  };
-
-  // Trigger immediate update if editing an existing date or if user modifies data
-  const triggerImmediateUpdate = (
-    nextNumbers: typeof numbers,
-    nextDiseases: TopItem[],
-    nextProcedures: TopItem[],
-    nextNote: string
   ) => {
-    const hasAnyValue =
-      Boolean(reportsMap[reportDate]) ||
-      Object.values(nextNumbers).some((v) => v > 0) ||
-      nextDiseases.some((d) => d.name.trim().length > 0) ||
-      nextProcedures.some((p) => p.name.trim().length > 0) ||
-      nextNote.trim().length > 0;
-
-    if (hasAnyValue && reportDate) {
-      const payload = buildReportPayload(nextNumbers, nextDiseases, nextProcedures, nextNote, false);
-      onSave(payload, false);
-      setLastAutoSavedAt(payload.updatedAt);
-    }
+    draftGeneration.current += 1;
+    onDraftChange?.(
+      makeReport(
+        reportDate,
+        nextNumbers,
+        nextDiseases,
+        nextProcedures,
+        nextNote,
+        publishedReport?.version,
+      ),
+    );
   };
-
-  const shiftDateByDays = (deltaDays: number) => {
-    const d = new Date(reportDate + 'T00:00:00');
-    if (isNaN(d.getTime())) return;
-    d.setDate(d.getDate() + deltaDays);
-    setReportDate(d.toISOString().slice(0, 10));
-  };
-
-  const handleNumberChange = (field: keyof typeof numbers, value: string) => {
-    const parsed = Math.max(0, parseInt(value, 10) || 0);
-    setNumbers((prev) => {
-      const next = { ...prev, [field]: parsed };
-      // If autoSumTotal is enabled and the user edited one of the service department fields, automatically recalculate totalMale / totalFemale
-      if (autoSumTotal && field !== 'totalMale' && field !== 'totalFemale') {
-        next.totalMale =
-          next.thaiMale + next.genMale + next.procMale + next.refillMale + next.referDocMale;
-        next.totalFemale =
-          next.thaiFemale +
-          next.genFemale +
-          next.procFemale +
-          next.refillFemale +
-          next.referDocFemale;
-      }
-      triggerImmediateUpdate(next, topDiseases, topProcedures, reporterNote);
+  const updateNumber = (field: NumberField, raw: string) => {
+    const parsed = raw === "" ? 0 : Math.max(0, Math.floor(Number(raw)) || 0);
+    setNumbers((previous) => {
+      const next = { ...previous, [field]: parsed };
+      emitDraft(next, diseases, procedures, note);
       return next;
     });
   };
-
-  const handleAutoSumFromServices = () => {
-    setNumbers((prev) => {
-      const sumMale =
-        prev.thaiMale + prev.genMale + prev.procMale + prev.refillMale + prev.referDocMale;
-      const sumFemale =
-        prev.thaiFemale +
-        prev.genFemale +
-        prev.procFemale +
-        prev.refillFemale +
-        prev.referDocFemale;
-      const next = {
-        ...prev,
-        totalMale: sumMale,
-        totalFemale: sumFemale,
-      };
-      triggerImmediateUpdate(next, topDiseases, topProcedures, reporterNote);
-      return next;
-    });
-  };
-
-  const handleResetForm = () => {
-    const zeroed = {
-      totalMale: 0,
-      totalFemale: 0,
-      thaiMale: 0,
-      thaiFemale: 0,
-      genMale: 0,
-      genFemale: 0,
-      procMale: 0,
-      procFemale: 0,
-      refillMale: 0,
-      refillFemale: 0,
-      referDocMale: 0,
-      referDocFemale: 0,
-      admitMale: 0,
-      admitFemale: 0,
-      referOutMale: 0,
-      referOutFemale: 0,
-    };
-    const emptyDis = EMPTY_FIVE_ITEMS();
-    const emptyProc = EMPTY_FIVE_ITEMS();
-    setNumbers(zeroed);
-    setTopDiseases(emptyDis);
-    setTopProcedures(emptyProc);
-    setReporterNote('');
-    if (reportsMap[reportDate]) {
-      triggerImmediateUpdate(zeroed, emptyDis, emptyProc, '');
-    }
-  };
-
-  const updateTopItem = (
-    type: 'disease' | 'procedure',
+  const updateItem = (
+    kind: "disease" | "procedure",
     index: number,
     key: keyof TopItem,
-    val: string | number
+    value: string,
   ) => {
-    if (type === 'disease') {
-      setTopDiseases((prev) => {
-        const next = [...prev];
-        const item = { ...next[index] };
-        if (key === 'name') {
-          item.name = String(val);
-        } else {
-          const num = Math.max(0, Number(val) || 0);
-          item[key] = num;
-          if (key === 'male' || key === 'female') {
-            const m = key === 'male' ? num : item.male || 0;
-            const f = key === 'female' ? num : item.female || 0;
-            item.count = m + f;
-          }
+    const setter = kind === "disease" ? setDiseases : setProcedures;
+    setter((previous) => {
+      const next = previous.map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        if (key === "name") return { ...item, name: value };
+        const numeric = Math.max(0, Math.floor(Number(value)) || 0);
+        const updated = { ...item, [key]: numeric };
+        if (key === "male" || key === "female") {
+          updated.count = (updated.male ?? 0) + (updated.female ?? 0);
         }
-        next[index] = item;
-        triggerImmediateUpdate(numbers, next, topProcedures, reporterNote);
-        return next;
+        return updated;
       });
-    } else {
-      setTopProcedures((prev) => {
-        const next = [...prev];
-        const item = { ...next[index] };
-        if (key === 'name') {
-          item.name = String(val);
-        } else {
-          const num = Math.max(0, Number(val) || 0);
-          item[key] = num;
-          if (key === 'male' || key === 'female') {
-            const m = key === 'male' ? num : item.male || 0;
-            const f = key === 'female' ? num : item.female || 0;
-            item.count = m + f;
-          }
-        }
-        next[index] = item;
-        triggerImmediateUpdate(numbers, topDiseases, next, reporterNote);
-        return next;
-      });
+      emitDraft(
+        numbers,
+        kind === "disease" ? next : diseases,
+        kind === "procedure" ? next : procedures,
+        note,
+      );
+      return next;
+    });
+  };
+  const resetDraft = () => {
+    const diseasesNext = emptyItems();
+    const proceduresNext = emptyItems();
+    const numbersNext = { ...EMPTY_NUMBERS };
+    setNumbers(numbersNext);
+    setDiseases(diseasesNext);
+    setProcedures(proceduresNext);
+    setNote("");
+    emitDraft(numbersNext, diseasesNext, proceduresNext, "");
+  };
+  const moveDateByDays = async (delta: number) => {
+    try {
+      await onDraftFlush?.();
+      onDateChange?.(shiftDate(reportDate, delta));
+    } catch {
+      // The parent keeps the draft and exposes the save error in its status.
     }
   };
-
-  const handleNoteChange = (val: string) => {
-    setReporterNote(val);
-    triggerImmediateUpdate(numbers, topDiseases, topProcedures, val);
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await onDraftFlush?.();
+      await onSave(
+        makeReport(
+          reportDate,
+          numbers,
+          diseases,
+          procedures,
+          note,
+          publishedReport?.version,
+        ),
+      );
+    } catch {
+      // The parent owns the visible error state and retains the local draft.
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!reportDate) return;
-    const payload = buildReportPayload(numbers, topDiseases, topProcedures, reporterNote, true);
-    onSave(payload, true);
-  };
-
-  const metricGroups = [
-    {
-      title: '1. ผู้รับบริการทั้งหมด',
-      subtitle: 'ยอดรวมผู้มารับบริการทั้งหมดประจำวัน (คำนวณอัตโนมัติหรือแก้ไขเองได้)',
-      mKey: 'totalMale' as const,
-      fKey: 'totalFemale' as const,
-    },
-    {
-      title: '2. ผู้รับบริการแพทย์แผนไทย',
-      subtitle: 'ตรวจรักษาแพทย์แผนไทย นวด ประคบ อบสมุนไพร จ่ายยาสมุนไพร',
-      mKey: 'thaiMale' as const,
-      fKey: 'thaiFemale' as const,
-    },
-    {
-      title: '3. ตรวจโรคทั่วไป (OPD)',
-      subtitle: 'ผู้ป่วยนอกตรวจรักษาโรคทั่วไป',
-      mKey: 'genMale' as const,
-      fKey: 'genFemale' as const,
-    },
-    {
-      title: '4. ทำหัตถการ',
-      subtitle: 'ทำแผล ฉีดยา พ่นยา เย็บแผล ตัดไหม',
-      mKey: 'procMale' as const,
-      fKey: 'procFemale' as const,
-    },
-    {
-      title: '5. รับยาต่อเนื่อง / เติมยาเดิม',
-      subtitle: 'คลินิกโรคเรื้อรังและรับยาเดิมตามนัด',
-      mKey: 'refillMale' as const,
-      fKey: 'refillFemale' as const,
-    },
-    {
-      title: '6. ขอใบส่งตัว',
-      subtitle: 'ผู้ป่วยติดต่อขอหนังสือส่งตัวรักษาต่อ',
-      mKey: 'referDocMale' as const,
-      fKey: 'referDocFemale' as const,
-    },
-    {
-      title: '7. รับไว้รักษาใน รพ. (Admit)',
-      subtitle: 'ผู้ป่วยรับไว้เป็นผู้ป่วยในของโรงพยาบาล',
-      mKey: 'admitMale' as const,
-      fKey: 'admitFemale' as const,
-    },
-    {
-      title: '8. ส่งต่อรักษาที่อื่น (Refer Out)',
-      subtitle: 'ส่งตัวฉุกเฉินหรือส่งต่อไปโรงพยาบาลอื่น',
-      mKey: 'referOutMale' as const,
-      fKey: 'referOutFemale' as const,
-    },
-  ];
+  const statusTone =
+    saveState === "error" || saveState === "conflict"
+      ? "text-rose-700 bg-rose-50 border-rose-200"
+      : saveState === "saved"
+        ? "text-teal-800 bg-teal-50 border-teal-200"
+        : "text-slate-600 bg-slate-50 border-slate-200";
 
   return (
-    <form onSubmit={handleSubmit} className="max-w-5xl mx-auto space-y-6">
-      {/* Header Bar */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-5">
+    <form onSubmit={handleSubmit} aria-busy={isPublishing || submitting} className="mx-auto max-w-6xl space-y-5 pb-10">
+      <fieldset disabled={disabled || isPublishing || submitting} className="contents">
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-            <span>หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์</span>
-            <span aria-hidden="true">·</span>
-            <span>
-              {existingRecord
-                ? `กำลังแก้ไขข้อมูลของวันที่ ${formatThaiDate(reportDate, true)}`
-                : `สร้างรายงานใหม่สำหรับวันที่ ${formatThaiDate(reportDate, true)}`}
-            </span>
-            {(lastAutoSavedAt || existingRecord?.updatedAt) && (
-              <>
-                <span aria-hidden="true">·</span>
-                <span className="inline-flex items-center gap-1 text-teal-700 font-medium tabular-nums">
-                  <RefreshCw className="w-3 h-3" />
-                  อัปเดตล่าสุด: {lastAutoSavedAt || existingRecord?.updatedAt}
-                </span>
-              </>
-            )}
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900 mt-1">
-            บันทึกข้อมูลประจำวัน / แก้ไขข้อมูลย้อนหลัง
+          <p className="text-sm text-slate-500">
+            หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์ ·{" "}
+            {publishedReport
+              ? `แก้ไขข้อมูลของวันที่ ${formatThaiDate(reportDate, true)}`
+              : `สร้างรายงานใหม่สำหรับวันที่ ${formatThaiDate(reportDate, true)}`}
+          </p>
+          <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-slate-950">
+            บันทึกข้อมูลรายงานประจำวัน
           </h1>
+          <p className="mt-2 text-xs text-slate-600">
+            {publishedReport
+              ? `เผยแพร่แล้ว · เวอร์ชัน ${publishedReport.version ?? "—"} · อัปเดต ${formatBangkokTimestamp(publishedReport.updatedAt)}`
+              : "ยังไม่มีรายงานที่เผยแพร่สำหรับวันนี้"}
+          </p>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleResetForm}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
-          >
-            <RotateCcw className="w-3.5 h-3.5" />
-            ล้างตัวเลขเป็น 0
-          </button>
+        <div
+          className={`max-w-full rounded-lg border px-3 py-2 text-sm font-medium leading-5 ${statusTone}`}
+          aria-live="polite"
+        >
+          {statusCopy(saveState, errorMessage)}
         </div>
       </div>
-
-      {/* Historical Date Selection & Navigation Panel */}
-      <div className="bg-white border border-slate-200 rounded-xl p-5 space-y-4">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-sm font-bold text-slate-900">
-              <History className="w-4 h-4 text-teal-600" />
-              <span>เลือกวันที่ต้องการบันทึก หรือแก้ไขข้อมูลย้อนหลัง</span>
-            </div>
-            <p className="text-xs text-slate-500">
-              ทุกครั้งที่มีการแก้ไขตัวเลขหรือข้อความ ระบบจะอัปเดตข้อมูลและคำนวณสถิติใหม่ให้อัตโนมัติทันที
+      {conflictMessage && (
+        <div
+          role="alert"
+          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          <p>{conflictMessage}</p>
+          {onRebase && (
+            <button
+              type="button"
+              onClick={() => void onRebase()}
+              className="control-button mt-3 border-amber-300 bg-white text-sm text-amber-900 hover:bg-amber-100"
+            >
+              {rebaseLabel}
+            </button>
+          )}
+        </div>
+      )}
+      {publishErrorMessage && (
+        <div
+          role="alert"
+          className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800"
+        >
+          บันทึกรายงานที่เผยแพร่ไม่สำเร็จ: {publishErrorMessage}
+        </div>
+      )}
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h2 className="font-display text-base font-bold text-slate-900">
+              วันที่รายงาน
+            </h2>
+            <p className="mt-1 text-xs text-slate-500">
+              ฉบับร่างจะถูกเก็บแยกจากรายงานที่เผยแพร่
             </p>
           </div>
-
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-2">
             <button
               type="button"
-              onClick={() => shiftDateByDays(-1)}
-              title="ย้อนกลับ 1 วัน"
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap"
+              onClick={() => void moveDateByDays(-1)}
+              className="control-button"
+              aria-label="วันก่อนหน้า"
             >
-              <ChevronLeft className="w-3.5 h-3.5" />
-              วันก่อนหน้า
+              <ChevronLeft className="h-4 w-4" />
+              ก่อนหน้า
             </button>
-
-            <input
-              id="report-date-input"
-              type="date"
-              required
-              aria-label="วันที่รายงาน"
-              value={reportDate}
-              onChange={(e) => setReportDate(e.target.value)}
-              className="border border-slate-300 bg-white rounded-lg px-3 py-1.5 text-sm font-mono font-semibold tabular-nums text-slate-900 focus:outline-none focus:ring-2 focus:ring-teal-600"
-            />
-
-            <button
-              type="button"
-              onClick={() => shiftDateByDays(1)}
-              title="ถัดไป 1 วัน"
-              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium text-slate-700 bg-slate-100 rounded-lg hover:bg-slate-200 transition-colors whitespace-nowrap"
-            >
-              วันถัดไป
-              <ChevronRight className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {/* Saved Historical Dates Quick Selector */}
-        {savedDatesDesc.length > 0 && (
-          <div className="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <label htmlFor="saved-dates-select" className="text-xs font-medium text-slate-600">
-              ดึงข้อมูลจากวันที่เคยบันทึกไว้แล้ว ({savedDatesDesc.length} วัน):
+            <label htmlFor="report-date" className="sr-only">
+              วันที่รายงาน
             </label>
-            <select
-              id="saved-dates-select"
-              value={existingRecord ? reportDate : ''}
-              onChange={(e) => {
-                if (e.target.value) {
-                  setReportDate(e.target.value);
+            <input
+              id="report-date"
+              type="date"
+              value={reportDate}
+              onChange={async (event) => {
+                const nextDate = event.target.value;
+                if (!isCalendarDate(nextDate)) return;
+                try {
+                  await onDraftFlush?.();
+                  onDateChange?.(nextDate);
+                } catch {
+                  // The parent keeps the draft and exposes the save error in its status.
                 }
               }}
-              className="border border-slate-300 bg-slate-50 rounded-lg px-3 py-1.5 text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-600 tabular-nums sm:w-80"
+              className="control-input font-mono tabular-nums"
+              required
+            />
+            <button
+              type="button"
+              onClick={() => void moveDateByDays(1)}
+              className="control-button"
+              aria-label="วันถัดไป"
             >
-              <option value="">-- คลิกเลือกวันที่เคยบันทึกเพื่อแก้ไขย้อนหลัง --</option>
-              {savedDatesDesc.map((d) => {
-                const r = reportsMap[d];
-                const tot = (Number(r?.totalMale) || 0) + (Number(r?.totalFemale) || 0);
-                return (
-                  <option key={d} value={d}>
-                    {d} ({formatThaiDate(d, true)}) — รวม {tot} ราย
-                  </option>
-                );
-              })}
-            </select>
+              ถัดไป
+              <ChevronRight className="h-4 w-4" />
+            </button>
           </div>
-        )}
-      </div>
-
-      {/* Quick Helper Bar */}
-      <div className="bg-white border border-slate-200 rounded-xl p-4 flex flex-wrap items-center justify-between gap-4">
-        <label className="flex items-center gap-2 text-xs text-slate-700 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={autoSumTotal}
-            onChange={(e) => setAutoSumTotal(e.target.checked)}
-            className="rounded border-slate-300 text-teal-600 focus:ring-teal-600"
-          />
-          <span>
-            <strong className="text-slate-900">อัปเดตยอดรวมผู้รับบริการทั้งหมดอัตโนมัติ</strong>{' '}
-            เมื่อแก้ไขตัวเลขในแผนกบริการ (ข้อ 2–6)
-          </span>
-        </label>
-
-        <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={handleAutoSumFromServices}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap"
-          >
-            <Calculator className="w-3.5 h-3.5" />
-            คำนวณรวมยอดข้อ 2–6 ทันที
-          </button>
         </div>
-      </div>
-
-      {/* 8 Metric Pairs Grid */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        <h2 className="text-base font-bold text-slate-900 pb-4 border-b border-slate-100">
-          ส่วนที่ 1: จำนวนผู้รับบริการแยกตามประเภทและเพศ
-        </h2>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-5 mt-5">
-          {metricGroups.map((group) => {
-            const mVal = numbers[group.mKey];
-            const fVal = numbers[group.fKey];
-            const sumVal = mVal + fVal;
-
+      </section>
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
+        <div className="border-b border-slate-100 pb-4">
+          <h2 className="font-display text-base font-bold text-slate-900">
+            ส่วนที่ 1: จำนวนผู้รับบริการแยกตามประเภทและเพศ
+          </h2>
+          <p className="mt-1 text-xs text-slate-500">
+            ยอดชายและหญิงกรอกแยกกันได้ หมวดบริการอาจนับซ้ำกันได้
+            ยอดรวมจะไม่ถูกคำนวณแทน
+          </p>
+        </div>
+        <div className="mt-5 grid gap-x-8 gap-y-6 md:grid-cols-2">
+          {metricGroups.map((group, index) => {
+            const total = numbers[group.mKey] + numbers[group.fKey];
             return (
               <div
                 key={group.title}
-                className="pb-4 border-b border-slate-100 last:border-b-0 md:nth-last-2:border-b-0 flex flex-col justify-between gap-3"
+                className="border-b border-slate-100 pb-5 md:[&:nth-last-child(-n+2)]:border-0"
               >
-                <div className="flex items-baseline justify-between gap-2">
+                <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm font-semibold text-slate-900">{group.title}</div>
-                    <div className="text-xs text-slate-500">{group.subtitle}</div>
+                    <h3 className="text-sm font-semibold text-slate-900">
+                      {index + 1}. {group.title}
+                    </h3>
+                    <p className="mt-1 text-xs text-slate-500">
+                      {group.subtitle}
+                    </p>
                   </div>
-                  <div className="text-xs text-slate-500 tabular-nums shrink-0">
-                    รวม <strong className="text-slate-900 text-sm">{sumVal}</strong> ราย
-                  </div>
+                  <span className="whitespace-nowrap text-xs text-slate-500">
+                    ชาย+หญิง{" "}
+                    <strong className="font-mono text-slate-900">
+                      {total}
+                    </strong>
+                  </span>
                 </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs text-slate-600 mb-1">ชาย (Male)</label>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <label className="field-label">
+                    ชาย (Male)
                     <input
                       type="number"
-                      min={0}
-                      value={mVal}
-                      onChange={(e) => handleNumberChange(group.mKey, e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      min="0"
+                      inputMode="numeric"
+                      value={numbers[group.mKey] || ""}
+                      onChange={(event) =>
+                        updateNumber(group.mKey, event.target.value)
+                      }
+                      className="control-input mt-1 w-full min-w-0 font-mono tabular-nums"
                     />
-                  </div>
-                  <div>
-                    <label className="block text-xs text-slate-600 mb-1">หญิง (Female)</label>
+                  </label>
+                  <label className="field-label">
+                    หญิง (Female)
                     <input
                       type="number"
-                      min={0}
-                      value={fVal}
-                      onChange={(e) => handleNumberChange(group.fKey, e.target.value)}
-                      className="w-full border border-slate-300 rounded-lg px-3 py-1.5 text-sm font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-teal-600"
+                      min="0"
+                      inputMode="numeric"
+                      value={numbers[group.fKey] || ""}
+                      onChange={(event) =>
+                        updateNumber(group.fKey, event.target.value)
+                      }
+                      className="control-input mt-1 w-full min-w-0 font-mono tabular-nums"
                     />
-                  </div>
+                  </label>
                 </div>
               </div>
             );
           })}
         </div>
+      </section>
+      <div className="grid gap-5 lg:grid-cols-2">
+        {(
+          [
+            ["โรคที่พบบ่อย 5 อันดับ", diseases, "disease", DISEASE_PRESETS],
+            ["หัตถการ 5 อันดับ", procedures, "procedure", PROCEDURE_PRESETS],
+          ] as const
+        ).map(([title, items, kind, presets]) => (
+          <section
+            key={title}
+            className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6"
+          >
+            <div className="border-b border-slate-100 pb-4">
+              <h2 className="font-display text-base font-bold text-slate-900">
+                ส่วนที่ {kind === "disease" ? 2 : 3}: {title}
+              </h2>
+              <p className="mt-1 text-xs text-slate-500">
+                กรอกจำนวนชายและหญิงได้แยกกัน
+              </p>
+            </div>
+            <datalist id={`${kind}-presets`}>
+              {presets.map((preset) => (
+                <option key={preset} value={preset} />
+              ))}
+            </datalist>
+            <div className="mt-4 space-y-3">
+              {items.map((item, index) => (
+                <div
+                  key={`${kind}-${index}`}
+                  className="grid grid-cols-[1.5rem_minmax(0,1fr)] gap-2 sm:grid-cols-[1.5rem_minmax(0,1fr)_4rem_4rem_4rem] sm:items-end"
+                >
+                  <span className="pb-2 font-mono text-xs text-slate-500">
+                    #{index + 1}
+                  </span>
+                  <label className="field-label col-start-2 sm:col-auto">
+                    ชื่อ{kind === "disease" ? "โรค" : "หัตถการ"}
+                    <input
+                      type="text"
+                      list={`${kind}-presets`}
+                      value={item.name}
+                      onChange={(event) =>
+                        updateItem(kind, index, "name", event.target.value)
+                      }
+                      className="control-input mt-1 w-full text-sm"
+                    />
+                  </label>
+                  <label className="field-label col-start-2 sm:col-auto">
+                    ชาย
+                    <input
+                      type="number"
+                      min="0"
+                      value={item.male || ""}
+                      onChange={(event) =>
+                        updateItem(kind, index, "male", event.target.value)
+                      }
+                      className="control-input mt-1 w-full min-w-0 font-mono"
+                    />
+                  </label>
+                  <label className="field-label col-start-2 sm:col-auto">
+                    หญิง
+                    <input
+                      type="number"
+                      min="0"
+                      value={item.female || ""}
+                      onChange={(event) =>
+                        updateItem(kind, index, "female", event.target.value)
+                      }
+                      className="control-input mt-1 w-full min-w-0 font-mono"
+                    />
+                  </label>
+                  <label className="field-label col-start-2 sm:col-auto">
+                    รวม
+                    <input
+                      type="number"
+                      min="0"
+                      value={item.count || ""}
+                      onChange={(event) =>
+                        updateItem(kind, index, "count", event.target.value)
+                      }
+                      className="control-input mt-1 w-full min-w-0 bg-slate-50 font-mono"
+                    />
+                  </label>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
       </div>
-
-      {/* Top 5 Diseases & Top 5 Procedures */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top 5 Diseases */}
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
-          <div className="pb-4 border-b border-slate-100">
-            <h2 className="text-base font-bold text-slate-900">
-              ส่วนที่ 2: 5 อันดับโรคที่พบบ่อย
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              พิมพ์ชื่อโรคหรือคลิกเลือกจากรายการโรคที่พบบ่อย พร้อมระบุจำนวนผู้ป่วย
-            </p>
-          </div>
-
-          <datalist id="disease-presets-list">
-            {DISEASE_PRESETS.map((d) => (
-              <option key={d} value={d} />
-            ))}
-          </datalist>
-
-          <div className="mt-4 space-y-3">
-            {topDiseases.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                <span className="col-span-1 text-xs font-mono text-slate-500 tabular-nums">
-                  #{idx + 1}
-                </span>
-                <input
-                  type="text"
-                  list="disease-presets-list"
-                  placeholder={`ชื่อโรคอันดับที่ ${idx + 1}...`}
-                  value={item.name}
-                  onChange={(e) => updateTopItem('disease', idx, 'name', e.target.value)}
-                  className="col-span-6 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="ชาย"
-                  title="จำนวนผู้ป่วยชาย"
-                  value={item.male || ''}
-                  onChange={(e) => updateTopItem('disease', idx, 'male', e.target.value)}
-                  className="col-span-2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="หญิง"
-                  title="จำนวนผู้ป่วยหญิง"
-                  value={item.female || ''}
-                  onChange={(e) => updateTopItem('disease', idx, 'female', e.target.value)}
-                  className="col-span-2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="รวม"
-                  title="จำนวนรวม"
-                  value={item.count || ''}
-                  onChange={(e) => updateTopItem('disease', idx, 'count', e.target.value)}
-                  className="col-span-1 border border-slate-300 bg-slate-50 rounded-lg px-1.5 py-1.5 text-xs font-mono font-semibold tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 text-[11px] text-slate-400">
-            หมายเหตุ: ช่องตัวเลข 3 ช่องหลัง คือ ชาย · หญิง · รวม (หากกรอก ชาย/หญิง ระบบจะบวกช่องรวมให้อัตโนมัติ หรือกรอกช่องรวมโดยตรงก็ได้)
-          </div>
-        </div>
-
-        {/* Top 5 Procedures */}
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
-          <div className="pb-4 border-b border-slate-100">
-            <h2 className="text-base font-bold text-slate-900">
-              ส่วนที่ 3: 5 อันดับหัตถการ
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              พิมพ์ชื่อหัตถการหรือคลิกเลือกจากรายการมาตรฐาน พร้อมระบุจำนวนครั้ง
-            </p>
-          </div>
-
-          <datalist id="procedure-presets-list">
-            {PROCEDURE_PRESETS.map((p) => (
-              <option key={p} value={p} />
-            ))}
-          </datalist>
-
-          <div className="mt-4 space-y-3">
-            {topProcedures.map((item, idx) => (
-              <div key={idx} className="grid grid-cols-12 gap-2 items-center">
-                <span className="col-span-1 text-xs font-mono text-slate-500 tabular-nums">
-                  #{idx + 1}
-                </span>
-                <input
-                  type="text"
-                  list="procedure-presets-list"
-                  placeholder={`ชื่อหัตถการอันดับที่ ${idx + 1}...`}
-                  value={item.name}
-                  onChange={(e) => updateTopItem('procedure', idx, 'name', e.target.value)}
-                  className="col-span-6 border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="ชาย"
-                  title="จำนวนผู้ป่วยชาย"
-                  value={item.male || ''}
-                  onChange={(e) => updateTopItem('procedure', idx, 'male', e.target.value)}
-                  className="col-span-2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="หญิง"
-                  title="จำนวนผู้ป่วยหญิง"
-                  value={item.female || ''}
-                  onChange={(e) => updateTopItem('procedure', idx, 'female', e.target.value)}
-                  className="col-span-2 border border-slate-300 rounded-lg px-2 py-1.5 text-xs font-mono tabular-nums focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-                <input
-                  type="number"
-                  min={0}
-                  placeholder="รวม"
-                  title="จำนวนรวม"
-                  value={item.count || ''}
-                  onChange={(e) => updateTopItem('procedure', idx, 'count', e.target.value)}
-                  className="col-span-1 border border-slate-300 bg-slate-50 rounded-lg px-1.5 py-1.5 text-xs font-mono font-semibold tabular-nums text-center focus:outline-none focus:ring-2 focus:ring-teal-600"
-                />
-              </div>
-            ))}
-          </div>
-          <div className="mt-3 text-[11px] text-slate-400">
-            หมายเหตุ: ระบบจะเรียงลำดับจากจำนวนมากไปน้อยให้อัตโนมัติเมื่อกดยืนยันบันทึกข้อมูล
-          </div>
-        </div>
-      </div>
-
-      {/* Reporter Note & Submit */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6 space-y-4">
-        <div>
-          <label htmlFor="reporter-note" className="block text-sm font-bold text-slate-900 mb-1">
-            ส่วนที่ 4: หมายเหตุเพิ่มเติม
-          </label>
+      <section className="rounded-xl border border-slate-200 bg-white p-4 sm:p-6">
+        <label
+          htmlFor="reporter-note"
+          className="field-label text-sm font-semibold text-slate-900"
+        >
+          ส่วนที่ 4: หมายเหตุภาพรวม
           <textarea
             id="reporter-note"
-            rows={3}
-            placeholder="ระบุรายละเอียดเพิ่มเติม เช่น สภาพความหนาแน่นของผู้รับบริการ การส่งต่อผู้ป่วยฉุกเฉิน หรือปัญหาที่พบในเวร..."
-            value={reporterNote}
-            onChange={(e) => handleNoteChange(e.target.value)}
-            className="w-full border border-slate-300 rounded-lg p-3 text-sm focus:outline-none focus:ring-2 focus:ring-teal-600"
+            rows={4}
+            value={note}
+            onChange={(event) => {
+              setNote(event.target.value);
+              emitDraft(numbers, diseases, procedures, event.target.value);
+            }}
+            placeholder="บันทึกข้อสังเกตภาพรวม เช่น ความหนาแน่น การส่งต่อฉุกเฉิน หรือปัญหาที่พบในเวร (ไม่ระบุชื่อหรือข้อมูลผู้ป่วย)"
+            className="control-input mt-2 min-h-28 w-full resize-y text-sm"
           />
-        </div>
-
-        <div className="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-4">
+        </label>
+        <div className="mt-5 flex flex-col-reverse gap-3 border-t border-slate-100 pt-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            {existingRecord && (
-              <>
-                {!confirmDelete ? (
+            {canDelete &&
+              publishedReport &&
+              onDelete &&
+              (!confirmDelete ? (
+                <button
+                  type="button"
+                  onClick={() => setConfirmDelete(true)}
+                  className="inline-flex min-h-11 items-center gap-2 rounded-lg px-3 text-sm font-medium text-rose-700 hover:bg-rose-50"
+                >
+                  <Trash2 className="h-4 w-4" />
+                  ลบรายงานวันนี้
+                </button>
+              ) : (
+                <span className="flex flex-wrap items-center gap-2 text-sm text-rose-700">
+                  <span>ยืนยันการลบรายงานนี้?</span>
                   <button
                     type="button"
-                    onClick={() => setConfirmDelete(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                    onClick={() => void onDelete(reportDate)}
+                    className="inline-flex min-h-11 items-center rounded-lg bg-rose-600 px-3 text-sm font-semibold text-white hover:bg-rose-700"
                   >
-                    <Trash2 className="w-4 h-4" />
-                    ลบข้อมูลของวันที่ {reportDate}
+                    ยืนยันลบ
                   </button>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-red-700 font-medium">ยืนยันการลบข้อมูลวันนี้?</span>
-                    <button
-                      type="button"
-                      onClick={() => onDelete(reportDate)}
-                      className="px-3 py-1.5 bg-red-600 text-white text-xs font-medium rounded-lg hover:bg-red-700"
-                    >
-                      ยืนยันลบ
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setConfirmDelete(false)}
-                      className="px-2.5 py-1.5 text-xs text-slate-600 hover:text-slate-900"
-                    >
-                      ยกเลิก
-                    </button>
-                  </div>
-                )}
-              </>
-            )}
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDelete(false)}
+                    className="inline-flex min-h-11 items-center rounded-lg px-3 text-sm text-slate-600 hover:bg-slate-100"
+                  >
+                    ยกเลิก
+                  </button>
+                </span>
+              ))}
           </div>
-
-          <div className="flex items-center gap-3">
+          <div className="flex flex-col gap-2 sm:flex-row">
             <button
               type="button"
-              onClick={onCancel}
-              className="px-4 py-2 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors"
+              onClick={async () => {
+                try {
+                  await onDraftFlush?.();
+                  onCancel?.();
+                } catch {
+                  // The parent keeps the draft and exposes the save error in its status.
+                }
+              }}
+              className="control-button justify-center"
             >
-              ดูผลลัพธ์ในหน้าภาพรวม
+              กลับภาพรวม (เก็บฉบับร่าง)
+            </button>
+            <button
+              type="button"
+              onClick={resetDraft}
+              className="control-button justify-center"
+            >
+              <RotateCcw className="h-4 w-4" />
+              ล้างฉบับร่าง
             </button>
             <button
               type="submit"
-              className="inline-flex items-center gap-2 px-5 py-2 text-xs font-semibold text-white bg-teal-600 rounded-lg hover:bg-teal-700 transition-colors"
+              disabled={
+                isPublishing ||
+                submitting ||
+                saveState === "saving" ||
+                saveState === "loading"
+              }
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-teal-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
             >
-              <Check className="w-4 h-4" />
-              {existingRecord ? 'ยืนยันการอัปเดตข้อมูลและกลับหน้าภาพรวม' : 'บันทึกข้อมูลรายงานประจำวัน'}
+              <Check className="h-4 w-4" />
+              {isPublishing || submitting ? "กำลังบันทึก…" : "บันทึกรายงานที่เผยแพร่"}
             </button>
           </div>
         </div>
-      </div>
+      </section>
+      </fieldset>
     </form>
   );
-};
+}

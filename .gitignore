@@ -6,3 +6,9 @@ coverage/
 *.log
 .env*
 !.env.example
+.next/
+src/generated/prisma/
+tsconfig.tsbuildinfo
+test-results/
+playwright-report/
+.impeccable/review/

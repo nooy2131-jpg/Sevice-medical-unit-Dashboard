@@ -1,0 +1,129 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://okr:ci-password@127.0.0.1:5432/okr_ci
+      BETTER_AUTH_SECRET: ci-build-secret-012345678901234567890123
+      BETTER_AUTH_URL: http://localhost:40000
+      BETTER_AUTH_TRUSTED_ORIGINS: http://localhost:40000
+      OKR_RUN_DB_TESTS: '1'
+      OKR_AUTH_TESTS: '1'
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: okr
+          POSTGRES_PASSWORD: ci-password
+          POSTGRES_DB: okr_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U okr -d okr_ci"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run db:generate
+      - run: bun run db:deploy
+      - run: bun run lint
+      - run: bun run typecheck
+      - run: bun test
+      - name: Verify first-Admin bootstrap safety
+        env:
+          BOOTSTRAP_ADMIN_EMAIL: bootstrap-admin@ci.invalid
+          BOOTSTRAP_ADMIN_NAME: Bootstrap CI Admin
+        run: |
+          bun run bootstrap-admin
+          bun run bootstrap-admin
+          if BOOTSTRAP_ADMIN_EMAIL=second-admin@ci.invalid BOOTSTRAP_ADMIN_NAME='Second CI Admin' bun run bootstrap-admin; then
+            echo 'Bootstrap unexpectedly created a second active Admin.' >&2
+            exit 1
+          fi
+      - run: bun run build
+
+  publish:
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      REGISTRY: ghcr.io
+      APP_IMAGE: ghcr.io/${{ github.repository_owner }}/okr-unit
+      MIGRATION_IMAGE: ghcr.io/${{ github.repository_owner }}/okr-unit-migrate
+      IMAGE_TAG: sha-${{ github.sha }}
+      NEXT_PUBLIC_APP_URL: https://okr-unit.pskwr.com
+    steps:
+      - name: Check out verified source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@c7c53464625b32c7a7e944ae62b3e17d2b600130 # v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Build and push application image
+        id: app
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: runner
+          push: true
+          tags: ${{ env.APP_IMAGE }}:${{ env.IMAGE_TAG }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          build-args: |
+            NEXT_PUBLIC_APP_URL=${{ env.NEXT_PUBLIC_APP_URL }}
+          cache-from: type=gha,scope=app
+          cache-to: type=gha,mode=max,scope=app
+
+      - name: Build and push migration image
+        id: migration
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64
+          target: migrate
+          push: true
+          tags: ${{ env.MIGRATION_IMAGE }}:${{ env.IMAGE_TAG }}
+          labels: org.opencontainers.image.source=https://github.com/${{ github.repository }}
+          cache-from: type=gha,scope=migration
+          cache-to: type=gha,mode=max,scope=migration
+
+      - name: Record image references and digests
+        env:
+          APP_DIGEST: ${{ steps.app.outputs.digest }}
+          MIGRATION_DIGEST: ${{ steps.migration.outputs.digest }}
+        run: |
+          {
+            echo '## Published images'
+            echo
+            echo "- Application: `${APP_IMAGE}:${IMAGE_TAG}`"
+            echo "  - Digest: `${APP_DIGEST}`"
+            echo "- Migration: `${MIGRATION_IMAGE}:${IMAGE_TAG}`"
+            echo "  - Digest: `${MIGRATION_DIGEST}`"
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,370 +1,480 @@
-import React, { useMemo, useState } from 'react';
-import { DailyReport, formatThaiDate, normalizeTopItems } from '../types/report';
-import { Download, Upload, Search, Trash2, Edit3, Eye, X, Plus } from 'lucide-react';
+"use client";
 
-interface RecordsTableViewProps {
+import { useMemo, useState } from "react";
+import { Download, Eye, Search, Trash2, Upload, X } from "lucide-react";
+import { Dialog } from "./Dialog";
+import {
+  DailyReport,
+  formatBangkokTimestamp,
+  formatThaiDate,
+  normalizeTopItems,
+} from "../types/report";
+import { parseReportsImport } from "../lib/csv";
+import { isCalendarDate, todayBangkok } from "../lib/dates";
+import { validateReport } from "../lib/report-validation";
+
+export interface ImportPreview {
+  rows: DailyReport[];
+  invalidRows: number;
+  duplicateDates: string[];
+}
+export interface RecordsTableViewProps {
   reports: DailyReport[];
-  onEditDate: (dateStr: string) => void;
-  onNewReport: () => void;
-  onDeleteDate: (dateStr: string) => void;
-  onExportCsv: () => void;
-  onImportReports: (imported: DailyReport[]) => void;
+  isAdmin?: boolean;
+  onEditDate: (date: string) => void;
+  onDeleteDate: (date: string) => Promise<void>;
+  onExportCsv: () => Promise<void> | void;
+  onImportRows?: (
+    rows: DailyReport[],
+    duplicateMode: "skip" | "overwrite",
+    expectedVersions: Record<string, number>,
+  ) => Promise<void>;
 }
 
-export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
+function parsePreview(text: string, existing: DailyReport[]): ImportPreview {
+  let parsed: unknown[];
+  try {
+    parsed = parseReportsImport(text);
+  } catch {
+    return { rows: [], invalidRows: 1, duplicateDates: [] };
+  }
+  const rows: DailyReport[] = [];
+  let invalidRows = 0;
+  const known = new Set(existing.map((report) => report.reportDate));
+  const duplicateDates: string[] = [];
+  for (const candidate of parsed) {
+    if (
+      typeof candidate !== "object" ||
+      candidate === null ||
+      Array.isArray(candidate)
+    ) {
+      invalidRows += 1;
+      continue;
+    }
+    const cells = candidate as Record<string, unknown>;
+    const reportDate =
+      typeof cells.reportDate === "string" ? cells.reportDate : "";
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(reportDate)) {
+      invalidRows += 1;
+      continue;
+    }
+    if (
+      known.has(reportDate) ||
+      rows.some((row) => row.reportDate === reportDate)
+    )
+      duplicateDates.push(reportDate);
+    const value = (key: string): number => {
+      const raw = cells[key];
+      if (raw === "") return 0;
+      if (
+        typeof raw !== "number" ||
+        !Number.isFinite(raw) ||
+        !Number.isSafeInteger(raw) ||
+        raw < 0
+      ) {
+        throw new Error(`${key} must be a non-negative integer`);
+      }
+      return raw;
+    };
+    try {
+      rows.push(
+        validateReport({
+          reportDate,
+          totalMale: value("totalMale"),
+          totalFemale: value("totalFemale"),
+          thaiMale: value("thaiMale"),
+          thaiFemale: value("thaiFemale"),
+          genMale: value("genMale"),
+          genFemale: value("genFemale"),
+          procMale: value("procMale"),
+          procFemale: value("procFemale"),
+          refillMale: value("refillMale"),
+          refillFemale: value("refillFemale"),
+          referDocMale: value("referDocMale"),
+          referDocFemale: value("referDocFemale"),
+          admitMale: value("admitMale"),
+          admitFemale: value("admitFemale"),
+          referOutMale: value("referOutMale"),
+          referOutFemale: value("referOutFemale"),
+          topDiseases: cells.topDiseases,
+          topProcedures: cells.topProcedures,
+          reporterNote:
+            typeof cells.reporterNote === "string" ? cells.reporterNote : "",
+          updatedAt:
+            typeof cells.updatedAt === "string"
+              ? cells.updatedAt
+              : new Date().toISOString(),
+        }) as DailyReport,
+      );
+    } catch {
+      invalidRows += 1;
+    }
+  }
+  return { rows, invalidRows, duplicateDates: [...new Set(duplicateDates)] };
+}
+
+export function RecordsTableView({
   reports,
+  isAdmin = false,
   onEditDate,
-  onNewReport,
   onDeleteDate,
   onExportCsv,
-  onImportReports,
-}) => {
-  const [searchQuery, setSearchQuery] = useState<string>('');
-  const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'total-desc'>('date-desc');
-  const [deletingDate, setDeletingDate] = useState<string | null>(null);
-  const [inspectDate, setInspectDate] = useState<string | null>(null);
-  const [showImportModal, setShowImportModal] = useState<boolean>(false);
-  const [importText, setImportText] = useState<string>('');
-  const [importError, setImportError] = useState<string>('');
-
-  const inspectReport = useMemo(
-    () => (inspectDate ? reports.find((r) => r.reportDate === inspectDate) || null : null),
-    [inspectDate, reports]
+  onImportRows,
+}: RecordsTableViewProps) {
+  const [query, setQuery] = useState("");
+  const [sort, setSort] = useState<"date-desc" | "date-asc" | "total-desc">(
+    "date-desc",
   );
-
-  const filteredAndSorted = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const list = reports.filter((r) => {
-      if (!q) return true;
-      const inDate =
-        r.reportDate.toLowerCase().includes(q) || formatThaiDate(r.reportDate).includes(q);
-      const inNote = (r.reporterNote || '').toLowerCase().includes(q);
-      const inDiseases = normalizeTopItems(r.topDiseases).some((d) =>
-        d.name.toLowerCase().includes(q)
-      );
-      const inProcedures = normalizeTopItems(r.topProcedures).some((p) =>
-        p.name.toLowerCase().includes(q)
-      );
-      return inDate || inNote || inDiseases || inProcedures;
-    });
-
-    return list.sort((a, b) => {
-      if (sortBy === 'date-asc') return a.reportDate.localeCompare(b.reportDate);
-      if (sortBy === 'total-desc') {
-        return b.totalMale + b.totalFemale - (a.totalMale + a.totalFemale);
-      }
-      return b.reportDate.localeCompare(a.reportDate);
-    });
-  }, [reports, searchQuery, sortBy]);
-
-  const handleImportSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    setImportError('');
-    const raw = importText.trim();
-    if (!raw) {
-      setImportError('กรุณาวางข้อมูลที่ต้องการนำเข้า');
+  const [inspectDate, setInspectDate] = useState<string | null>(null);
+  const [deleteDate, setDeleteDate] = useState<string | null>(null);
+  const [importPreview, setImportPreview] = useState<ImportPreview | null>(
+    null,
+  );
+  const [duplicateMode, setDuplicateMode] = useState<"skip" | "overwrite">(
+    "skip",
+  );
+  const [importError, setImportError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [dateToOpen, setDateToOpen] = useState(todayBangkok());
+  const [dateError, setDateError] = useState<string | null>(null);
+  const [pasteImportOpen, setPasteImportOpen] = useState(false);
+  const [pasteImportText, setPasteImportText] = useState("");
+  const [pasteImportError, setPasteImportError] = useState<string | null>(null);
+  const filtered = useMemo(
+    () =>
+      reports
+        .filter((report) => {
+          const normalized = query.trim().toLowerCase();
+          if (!normalized) return true;
+          return (
+            report.reportDate.includes(normalized) ||
+            formatThaiDate(report.reportDate).includes(normalized) ||
+            report.reporterNote.toLowerCase().includes(normalized) ||
+            normalizeTopItems(report.topDiseases).some((item) =>
+              item.name.toLowerCase().includes(normalized),
+            ) ||
+            normalizeTopItems(report.topProcedures).some((item) =>
+              item.name.toLowerCase().includes(normalized),
+            )
+          );
+        })
+        .sort((a, b) =>
+          sort === "date-asc"
+            ? a.reportDate.localeCompare(b.reportDate)
+            : sort === "total-desc"
+              ? b.totalMale + b.totalFemale - (a.totalMale + a.totalFemale)
+              : b.reportDate.localeCompare(a.reportDate),
+        ),
+    [reports, query, sort],
+  );
+  const inspect = inspectDate
+    ? reports.find((report) => report.reportDate === inspectDate)
+    : null;
+  const openImport = (value: string) => {
+    setImportError(null);
+    setImportPreview(value.trim() ? parsePreview(value, reports) : null);
+  };
+  const openSelectedDate = () => {
+    if (!isCalendarDate(dateToOpen)) {
+      setDateError("กรุณาเลือกวันที่ตามปฏิทินที่ถูกต้อง");
       return;
     }
-
+    setDateError(null);
+    onEditDate(dateToOpen);
+  };
+  const submitPasteImport = () => {
+    if (!pasteImportText.trim()) {
+      setPasteImportError("กรุณาวางข้อมูลที่ต้องการนำเข้า");
+      return;
+    }
+    setPasteImportError(null);
+    openImport(pasteImportText);
+    setPasteImportText("");
+    setPasteImportOpen(false);
+  };
+  const submitImport = async () => {
+    if (!importPreview || !onImportRows) return;
+    if (!importPreview.rows.length) {
+      setImportError("ไม่พบแถวที่นำเข้าได้");
+      return;
+    }
+    if (importPreview.invalidRows > 0) {
+      setImportError("ไฟล์มีแถวไม่ถูกต้อง กรุณาแก้ไขไฟล์ก่อนนำเข้า");
+      return;
+    }
+    const dates = importPreview.rows.map((row) => row.reportDate);
+    if (new Set(dates).size !== dates.length) {
+      setImportError("ไฟล์มีวันที่ซ้ำกันภายในไฟล์ กรุณาแก้ไขก่อนนำเข้า");
+      return;
+    }
+    const expectedVersions = Object.fromEntries(
+      importPreview.rows.flatMap((row) => {
+        const current = reports.find(
+          (report) => report.reportDate === row.reportDate,
+        );
+        return current?.version === undefined
+          ? []
+          : [[row.reportDate, current.version]];
+      }),
+    );
+    setImportBusy(true);
     try {
-      if (raw.startsWith('{') || raw.startsWith('[')) {
-        const parsed = JSON.parse(raw);
-        const list: DailyReport[] = Array.isArray(parsed)
-          ? parsed
-          : Object.values(parsed);
-        const valid = list.filter((item) => item && typeof item.reportDate === 'string');
-        if (valid.length === 0) {
-          setImportError('ไม่พบข้อมูลวันที่รายงานที่ถูกต้อง');
-          return;
-        }
-        onImportReports(valid);
-        setShowImportModal(false);
-        setImportText('');
-        return;
-      }
-
-      const lines = raw.split(/\r?\n/).filter((l) => l.trim().length > 0);
-      if (lines.length < 2) {
-        setImportError('ข้อมูล CSV ต้องมีอย่างน้อยหัวตารางและข้อมูล 1 แถว');
-        return;
-      }
-      const parsedRows: DailyReport[] = [];
-      for (let i = 1; i < lines.length; i++) {
-        const cols =
-          lines[i].split('\t').length >= 17 ? lines[i].split('\t') : lines[i].split(',');
-        const dateStr = (cols[0] || '').replace(/^"|"$/g, '').trim().slice(0, 10);
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
-        parsedRows.push({
-          reportDate: dateStr,
-          totalMale: Number(cols[1]) || 0,
-          totalFemale: Number(cols[2]) || 0,
-          thaiMale: Number(cols[3]) || 0,
-          thaiFemale: Number(cols[4]) || 0,
-          genMale: Number(cols[5]) || 0,
-          genFemale: Number(cols[6]) || 0,
-          procMale: Number(cols[7]) || 0,
-          procFemale: Number(cols[8]) || 0,
-          refillMale: Number(cols[9]) || 0,
-          refillFemale: Number(cols[10]) || 0,
-          referDocMale: Number(cols[11]) || 0,
-          referDocFemale: Number(cols[12]) || 0,
-          admitMale: Number(cols[13]) || 0,
-          admitFemale: Number(cols[14]) || 0,
-          referOutMale: Number(cols[15]) || 0,
-          referOutFemale: Number(cols[16]) || 0,
-          topDiseases: [],
-          topProcedures: [],
-          reporterNote: cols[19] ? String(cols[19]).replace(/^"|"$/g, '') : '',
-          updatedAt: cols[20] ? String(cols[20]).replace(/^"|"$/g, '') : new Date().toISOString(),
-        });
-      }
-
-      if (parsedRows.length === 0) {
-        setImportError('ไม่สามารถแปลงข้อมูลได้ กรุณาตรวจสอบว่าคอลัมน์แรกเป็นวันที่ YYYY-MM-DD');
-        return;
-      }
-
-      onImportReports(parsedRows);
-      setShowImportModal(false);
-      setImportText('');
-    } catch (err) {
-      setImportError('รูปแบบข้อมูลไม่ถูกต้อง: ' + String(err));
+      await onImportRows(importPreview.rows, duplicateMode, expectedVersions);
+    } catch (reason) {
+      setImportError(
+        reason instanceof Error ? reason.message : "นำเข้ารายงานไม่สำเร็จ",
+      );
+      return;
+    } finally {
+      setImportBusy(false);
+    }
+    setImportPreview(null);
+  };
+  const submitDelete = async () => {
+    if (!deleteDate) return;
+    const date = deleteDate;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await onDeleteDate(date);
+      setDeleteDate(null);
+    } catch (reason) {
+      setDeleteError(
+        reason instanceof Error ? reason.message : "ลบรายงานไม่สำเร็จ",
+      );
+    } finally {
+      setDeleteBusy(false);
     }
   };
-
   return (
-    <div className="space-y-6">
-      {/* Header & Toolbar */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-slate-200 pb-5">
+    <div className="mx-auto max-w-7xl space-y-5">
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span>หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์</span>
-            <span aria-hidden="true">·</span>
-            <span className="tabular-nums">บันทึกทั้งหมด {reports.length} วันทำการ</span>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900 mt-1">
-            ตารางข้อมูลรายงานประจำวันย้อนหลัง
+          <p className="text-sm text-slate-500">
+            หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์ · บันทึกทั้งหมด{" "}
+            {reports.length} วัน
+          </p>
+          <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-slate-950">
+            ตารางรายงานย้อนหลัง
           </h1>
         </div>
-
-        <div className="flex flex-wrap items-center gap-2.5">
-          <div className="relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+        <div className="flex flex-wrap items-end gap-2">
+          <label className="relative">
+            <span className="sr-only">ค้นหารายงาน</span>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
-              type="text"
-              placeholder="ค้นหาวันที่ ชื่อโรค หัตถการ หมายเหตุ..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-9 pr-3 py-1.5 border border-slate-300 bg-white rounded-lg text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-600 w-60"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="ค้นหาวันที่ โรค หัตถการ…"
+              className="control-input pl-9 text-sm"
             />
+          </label>
+          <label>
+            <span className="sr-only">เรียงลำดับ</span>
+            <select
+              value={sort}
+              onChange={(event) => setSort(event.target.value as typeof sort)}
+              className="control-select text-sm"
+            >
+              <option value="date-desc">วันที่ล่าสุดก่อน</option>
+              <option value="date-asc">วันที่เก่าสุดก่อน</option>
+              <option value="total-desc">ยอดรวมมากสุดก่อน</option>
+            </select>
+          </label>
+          <div className="flex items-end gap-2">
+            <label className="block">
+              <span className="sr-only">วันที่รายงานที่ต้องการเปิด</span>
+              <input
+                type="date"
+                value={dateToOpen}
+                onChange={(event) => {
+                  setDateToOpen(event.target.value);
+                  setDateError(null);
+                }}
+                aria-describedby={dateError ? "records-date-error" : undefined}
+                className="control-input font-mono text-sm tabular-nums"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={openSelectedDate}
+              className="control-button"
+            >
+              เปิดรายงาน
+            </button>
           </div>
-
-          <select
-            aria-label="เรียงลำดับข้อมูล"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
-            className="border border-slate-300 bg-white rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-600"
-          >
-            <option value="date-desc">วันที่ล่าสุดก่อน</option>
-            <option value="date-asc">วันที่เก่าสุดก่อน</option>
-            <option value="total-desc">ยอดผู้รับบริการมากสุดก่อน</option>
-          </select>
-
+          {dateError && (
+            <p id="records-date-error" className="basis-full text-sm text-rose-700" role="alert">
+              {dateError}
+            </p>
+          )}
           <button
             type="button"
-            onClick={onNewReport}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap"
-          >
-            <Plus className="w-3.5 h-3.5" />
-            เพิ่ม/แก้ไขข้อมูลย้อนหลัง
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setShowImportModal(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            นำเข้าข้อมูล
-          </button>
-
-          <button
-            type="button"
-            onClick={onExportCsv}
+            onClick={() => void onExportCsv()}
+            className="control-button"
             disabled={reports.length === 0}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800 disabled:opacity-40 transition-colors whitespace-nowrap"
           >
-            <Download className="w-3.5 h-3.5" />
+            <Download className="h-4 w-4" />
             ส่งออก CSV
           </button>
+          {isAdmin && onImportRows && (
+            <>
+              <label className="control-button cursor-pointer">
+                <Upload className="h-4 w-4" />
+                นำเข้าไฟล์
+                <input
+                  type="file"
+                  accept=".csv,text/csv,.tsv,text/tab-separated-values,.json,application/json"
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    void file.text().then(openImport);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setPasteImportError(null);
+                  setPasteImportOpen(true);
+                }}
+                className="control-button"
+              >
+                วาง CSV / JSON / TSV
+              </button>
+            </>
+          )}
         </div>
       </div>
-
-      {/* High-Density Data Table */}
-      <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse text-xs">
-            <thead>
-              <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-semibold">
-                <th className="py-3 px-4 whitespace-nowrap">วันที่รายงาน</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">ผู้รับบริการรวม (ช/ญ)</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">แพทย์แผนไทย (ช/ญ)</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">ตรวจโรคทั่วไป</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">หัตถการ</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">รับยาเดิม</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">ใบส่งตัว</th>
-                <th className="py-3 px-3 text-right whitespace-nowrap">Admit / Refer</th>
-                <th className="py-3 px-4 whitespace-nowrap">โรคอันดับ 1 · อัปเดตล่าสุด</th>
-                <th className="py-3 px-4 text-right whitespace-nowrap">จัดการข้อมูลย้อนหลัง</th>
+          <table className="w-full min-w-[1200px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-600">
+              <tr>
+                <th className="px-4 py-3 font-semibold">วันที่รายงาน</th>
+                <th className="px-4 py-3 text-right font-semibold">
+                  ผู้รับบริการรวม (ช/ญ)
+                </th>
+                <th className="px-4 py-3 text-right font-semibold">
+                  แพทย์แผนไทย (ช/ญ)
+                </th>
+                <th className="px-4 py-3 text-right font-semibold">ตรวจโรคทั่วไป</th>
+                <th className="px-4 py-3 text-right font-semibold">หัตถการ</th>
+                <th className="px-4 py-3 text-right font-semibold">รับยาเดิม</th>
+                <th className="px-4 py-3 text-right font-semibold">ใบส่งตัว</th>
+                <th className="px-4 py-3 text-right font-semibold">Admit / Refer</th>
+                <th className="px-4 py-3 font-semibold">โรคอันดับ 1</th>
+                <th className="px-4 py-3 font-semibold">อัปเดตล่าสุด</th>
+                <th className="px-4 py-3 text-right font-semibold">จัดการ</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-200">
-              {filteredAndSorted.length === 0 ? (
+            <tbody className="divide-y divide-slate-100">
+              {filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-10 text-center text-slate-400">
-                    ยังไม่มีรายการข้อมูลในตาราง กดปุ่ม &ldquo;เพิ่ม/แก้ไขข้อมูลย้อนหลัง&rdquo; เพื่อเริ่มบันทึกข้อมูล
+                  <td
+                    colSpan={11}
+                    className="px-4 py-12 text-center text-sm text-slate-500"
+                  >
+                    {reports.length === 0 ? (
+                      <div className="flex flex-col items-center gap-3">
+                        <p>ยังไม่มีข้อมูลรายงาน</p>
+                        <button
+                          type="button"
+                          onClick={openSelectedDate}
+                          className="control-button"
+                        >
+                          เปิดรายงานวันที่เลือก
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="flex flex-col items-center gap-3">
+                        <p>ไม่พบรายงานที่ตรงกับคำค้น</p>
+                        <button
+                          type="button"
+                          onClick={() => setQuery("")}
+                          className="control-button"
+                        >
+                          ล้างคำค้น
+                        </button>
+                      </div>
+                    )}
                   </td>
                 </tr>
               ) : (
-                filteredAndSorted.map((r) => {
-                  const totAll = (Number(r.totalMale) || 0) + (Number(r.totalFemale) || 0);
-                  const totThaiMed = (Number(r.thaiMale) || 0) + (Number(r.thaiFemale) || 0);
-                  const totGen = (Number(r.genMale) || 0) + (Number(r.genFemale) || 0);
-                  const totProc = (Number(r.procMale) || 0) + (Number(r.procFemale) || 0);
-                  const totRefill = (Number(r.refillMale) || 0) + (Number(r.refillFemale) || 0);
-                  const totReferDoc =
-                    (Number(r.referDocMale) || 0) + (Number(r.referDocFemale) || 0);
-                  const totAdmit = (Number(r.admitMale) || 0) + (Number(r.admitFemale) || 0);
-                  const totReferOut =
-                    (Number(r.referOutMale) || 0) + (Number(r.referOutFemale) || 0);
-                  const topDis = normalizeTopItems(r.topDiseases)[0];
-
+                filtered.map((report) => {
+                  const topDisease = normalizeTopItems(report.topDiseases)[0];
+                  const serviceCell = (male: number, female: number) => (
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">
+                      <span className="font-semibold text-slate-900">{male + female}</span>
+                      <span className="ml-1 text-xs text-slate-500">({male}/{female})</span>
+                    </td>
+                  );
                   return (
-                    <tr key={r.reportDate} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-2.5 px-4 whitespace-nowrap">
-                        <div className="font-mono font-semibold text-slate-900 tabular-nums">
-                          {r.reportDate}
-                        </div>
-                        <div className="text-[11px] text-slate-500">
-                          {formatThaiDate(r.reportDate, true)}
-                        </div>
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap">
-                        <span className="font-bold text-slate-900 text-sm">
-                          {totAll.toLocaleString()}
-                        </span>
-                        <span className="text-slate-500 ml-1">
-                          ({r.totalMale || 0}/{r.totalFemale || 0})
-                        </span>
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
-                        <span className="font-semibold text-teal-800">
-                          {totThaiMed.toLocaleString()}
-                        </span>
-                        <span className="text-slate-400 ml-1">
-                          ({r.thaiMale || 0}/{r.thaiFemale || 0})
-                        </span>
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
-                        <span className="font-semibold">{totGen}</span>
-                        <span className="text-slate-400 ml-1">
-                          ({r.genMale || 0}/{r.genFemale || 0})
-                        </span>
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
-                        <span className="font-semibold">{totProc}</span>
-                        <span className="text-slate-400 ml-1">
-                          ({r.procMale || 0}/{r.procFemale || 0})
-                        </span>
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
-                        <span className="font-semibold">{totRefill}</span>
-                        <span className="text-slate-400 ml-1">
-                          ({r.refillMale || 0}/{r.refillFemale || 0})
-                        </span>
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
-                        <span className="font-semibold">{totReferDoc}</span>
-                        <span className="text-slate-400 ml-1">
-                          ({r.referDocMale || 0}/{r.referDocFemale || 0})
-                        </span>
-                      </td>
-
-                      <td className="py-2.5 px-3 text-right tabular-nums whitespace-nowrap text-slate-700">
-                        <span>Admit {totAdmit}</span>
-                        <span className="mx-1 text-slate-300">·</span>
-                        <span>Refer {totReferOut}</span>
-                      </td>
-
-                      <td className="py-2.5 px-4 max-w-xs">
-                        {topDis && (
-                          <div className="text-slate-800 font-medium truncate" title={topDis.name}>
-                            {topDis.name} ({topDis.count})
-                          </div>
+                  <tr key={report.reportDate} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <span className="font-medium text-slate-900">
+                        {formatThaiDate(report.reportDate, true)}
+                      </span>
+                      <span className="ml-2 font-mono text-xs text-slate-500">
+                        {report.reportDate}
+                      </span>
+                    </td>
+                    {serviceCell(report.totalMale, report.totalFemale)}
+                    {serviceCell(report.thaiMale, report.thaiFemale)}
+                    {serviceCell(report.genMale, report.genFemale)}
+                    {serviceCell(report.procMale, report.procFemale)}
+                    {serviceCell(report.refillMale, report.refillFemale)}
+                    {serviceCell(report.referDocMale, report.referDocFemale)}
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">
+                      <span className="font-semibold text-slate-900">Admit {report.admitMale + report.admitFemale}</span>
+                      <span className="mx-1 text-slate-400">·</span>
+                      <span className="font-semibold text-slate-900">Refer {report.referOutMale + report.referOutFemale}</span>
+                    </td>
+                    <td className="max-w-56 truncate px-4 py-3">
+                      {topDisease ? `${topDisease.name} (${topDisease.count})` : "—"}
+                    </td>
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      <span className="block">
+                        {report.lastEditor?.name ?? report.updatedBy ?? "—"}
+                      </span>
+                      <span className="font-mono tabular-nums">
+                        {formatBangkokTimestamp(report.updatedAt)}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setInspectDate(report.reportDate)}
+                          className="control-button px-2"
+                          aria-label={`ดูรายงาน ${report.reportDate}`}
+                        >
+                          <Eye className="h-4 w-4" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onEditDate(report.reportDate)}
+                          className="control-button px-2"
+                        >
+                          แก้ไข
+                        </button>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => setDeleteDate(report.reportDate)}
+                            className="control-button px-2 text-rose-700"
+                            aria-label={`ลบรายงาน ${report.reportDate}`}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </button>
                         )}
-                        <div className="text-slate-500 truncate tabular-nums" title={r.reporterNote}>
-                          {r.updatedAt ? `อัปเดต ${r.updatedAt}` : r.reporterNote || '-'}
-                        </div>
-                      </td>
-
-                      <td className="py-2.5 px-4 text-right whitespace-nowrap">
-                        {deletingDate === r.reportDate ? (
-                          <div className="inline-flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                onDeleteDate(r.reportDate);
-                                setDeletingDate(null);
-                              }}
-                              className="px-2 py-1 bg-red-600 text-white rounded text-[11px] font-medium hover:bg-red-700"
-                            >
-                              ยืนยันลบ
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeletingDate(null)}
-                              className="px-2 py-1 text-slate-600 hover:text-slate-900 text-[11px]"
-                            >
-                              ยกเลิก
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="inline-flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => setInspectDate(r.reportDate)}
-                              title="ดูรายละเอียด"
-                              className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-md transition-colors"
-                            >
-                              <Eye className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => onEditDate(r.reportDate)}
-                              title="แก้ไขข้อมูลย้อนหลังของวันนี้"
-                              className="inline-flex items-center gap-1 px-2.5 py-1 text-teal-800 bg-teal-50 border border-teal-200 hover:bg-teal-100 rounded-md font-medium transition-colors"
-                            >
-                              <Edit3 className="w-3 h-3" />
-                              แก้ไข
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setDeletingDate(r.reportDate)}
-                              title="ลบแถวนี้"
-                              className="p-1.5 text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        )}
-                      </td>
-                    </tr>
+                      </div>
+                    </td>
+                  </tr>
                   );
                 })
               )}
@@ -372,197 +482,315 @@ export const RecordsTableView: React.FC<RecordsTableViewProps> = ({
           </table>
         </div>
       </div>
-
-      {/* Modal: Inspect Single Day Report Details */}
-      {inspectReport && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
-          <div className="bg-white border border-slate-200 rounded-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto p-6 space-y-5">
-            <div className="flex items-start justify-between border-b border-slate-200 pb-4">
+      {inspect && (
+        <Dialog open={Boolean(inspect)} labelledBy="inspect-title" onClose={() => setInspectDate(null)} className="max-w-2xl">
+            <div className="flex items-start justify-between">
               <div>
-                <div className="text-xs text-slate-500 tabular-nums">
-                  วันที่ {inspectReport.reportDate} · อัปเดตล่าสุด {inspectReport.updatedAt || '-'}
-                </div>
-                <h3 className="text-lg font-bold text-slate-900 mt-0.5">
-                  รายงานประจำวันที่ {formatThaiDate(inspectReport.reportDate)}
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setInspectDate(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
-              {[
-                {
-                  label: 'ผู้รับบริการทั้งหมด',
-                  m: inspectReport.totalMale || 0,
-                  f: inspectReport.totalFemale || 0,
-                },
-                {
-                  label: 'แพทย์แผนไทย',
-                  m: inspectReport.thaiMale || 0,
-                  f: inspectReport.thaiFemale || 0,
-                },
-                {
-                  label: 'ตรวจโรคทั่วไป',
-                  m: inspectReport.genMale || 0,
-                  f: inspectReport.genFemale || 0,
-                },
-                {
-                  label: 'ทำหัตถการ',
-                  m: inspectReport.procMale || 0,
-                  f: inspectReport.procFemale || 0,
-                },
-                {
-                  label: 'รับยาต่อเนื่อง',
-                  m: inspectReport.refillMale || 0,
-                  f: inspectReport.refillFemale || 0,
-                },
-                {
-                  label: 'ขอใบส่งตัว',
-                  m: inspectReport.referDocMale || 0,
-                  f: inspectReport.referDocFemale || 0,
-                },
-                {
-                  label: 'รับไว้รักษา (Admit)',
-                  m: inspectReport.admitMale || 0,
-                  f: inspectReport.admitFemale || 0,
-                },
-                {
-                  label: 'ส่งต่อ (Refer Out)',
-                  m: inspectReport.referOutMale || 0,
-                  f: inspectReport.referOutFemale || 0,
-                },
-              ].map((item) => (
-                <div key={item.label} className="border border-slate-200 rounded-lg p-3">
-                  <div className="text-slate-500">{item.label}</div>
-                  <div className="text-lg font-bold text-slate-900 tabular-nums mt-0.5">
-                    {item.m + item.f}
-                  </div>
-                  <div className="text-[11px] text-slate-500 tabular-nums">
-                    ชาย {item.m} · หญิง {item.f}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2 border-t border-slate-100 text-xs">
-              <div>
-                <h4 className="font-bold text-slate-900 mb-2">5 อันดับโรคที่พบบ่อย</h4>
-                <div className="space-y-1.5">
-                  {normalizeTopItems(inspectReport.topDiseases).map((d, i) => (
-                    <div key={i} className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-700">
-                        {i + 1}. {d.name}
-                      </span>
-                      <span className="font-mono font-semibold tabular-nums">{d.count} ราย</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <h4 className="font-bold text-slate-900 mb-2">5 อันดับหัตถการ</h4>
-                <div className="space-y-1.5">
-                  {normalizeTopItems(inspectReport.topProcedures).map((p, i) => (
-                    <div key={i} className="flex justify-between py-1 border-b border-slate-100">
-                      <span className="text-slate-700">
-                        {i + 1}. {p.name}
-                      </span>
-                      <span className="font-mono font-semibold tabular-nums">{p.count} ครั้ง</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            <div className="pt-2 border-t border-slate-100 text-xs">
-              <span className="font-semibold text-slate-900">หมายเหตุเพิ่มเติม: </span>
-              <span className="text-slate-600">{inspectReport.reporterNote || '-'}</span>
-            </div>
-
-            <div className="flex justify-end gap-2 pt-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => {
-                  const d = inspectReport.reportDate;
-                  setInspectDate(null);
-                  onEditDate(d);
-                }}
-                className="px-4 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg hover:bg-teal-700"
-              >
-                แก้ไขข้อมูลย้อนหลังของวันนี้
-              </button>
-              <button
-                type="button"
-                onClick={() => setInspectDate(null)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-medium rounded-lg hover:bg-slate-50"
-              >
-                ปิดหน้าต่าง
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Modal: Import JSON / CSV */}
-      {showImportModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/50 flex items-center justify-center p-4">
-          <form
-            onSubmit={handleImportSubmit}
-            className="bg-white border border-slate-200 rounded-xl max-w-xl w-full p-6 space-y-4"
-          >
-            <div className="flex items-start justify-between border-b border-slate-200 pb-3">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">นำเข้าข้อมูล (CSV หรือ JSON)</h3>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  วางข้อมูลจากตารางหรือไฟล์ที่ส่งออกไว้เพื่อนำเข้าสู่ระบบ
+                <h2
+                  id="inspect-title"
+                  className="font-display text-xl font-bold text-slate-900"
+                >
+                  รายงานวันที่ {formatThaiDate(inspect.reportDate)}
+                </h2>
+                <p className="mt-1 text-sm text-slate-500">
+                  อัปเดตโดย{" "}
+                  {inspect.lastEditor?.name ?? inspect.updatedBy ?? "ไม่ระบุ"} ·{" "}
+                  {formatBangkokTimestamp(inspect.updatedAt)}
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowImportModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-700"
+                onClick={() => setInspectDate(null)}
+                className="control-button px-2"
+                aria-label="ปิด"
+                data-dialog-initial-focus
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </button>
             </div>
-
-            {importError && (
-              <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg">
-                {importError}
+            <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
+              {[
+                ["ชาย", inspect.totalMale],
+                ["หญิง", inspect.totalFemale],
+                [
+                  "แพทย์แผนไทย ช/ญ",
+                  `${inspect.thaiMale}/${inspect.thaiFemale}`,
+                ],
+                [
+                  "ตรวจโรคทั่วไป ช/ญ",
+                  `${inspect.genMale}/${inspect.genFemale}`,
+                ],
+                ["หัตถการ ช/ญ", `${inspect.procMale}/${inspect.procFemale}`],
+                [
+                  "รับยาเดิม ช/ญ",
+                  `${inspect.refillMale}/${inspect.refillFemale}`,
+                ],
+                [
+                  "ใบส่งตัว ช/ญ",
+                  `${inspect.referDocMale}/${inspect.referDocFemale}`,
+                ],
+                ["Admit ช/ญ", `${inspect.admitMale}/${inspect.admitFemale}`],
+                [
+                  "Refer Out ช/ญ",
+                  `${inspect.referOutMale}/${inspect.referOutFemale}`,
+                ],
+              ].map(([label, value]) => (
+                <div
+                  key={String(label)}
+                  className="rounded-lg border border-slate-200 p-3"
+                >
+                  <p className="text-xs text-slate-500">{label}</p>
+                  <p className="mt-1 font-mono font-semibold tabular-nums text-slate-900">
+                    {value}
+                  </p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">
+                  โรคที่พบบ่อย
+                </h3>
+                <ol className="mt-2 space-y-1 text-sm text-slate-700">
+                  {normalizeTopItems(inspect.topDiseases).map((item, index) => (
+                    <li
+                      key={`${item.name}-${index}`}
+                      className="flex justify-between gap-2"
+                    >
+                      <span>
+                        {index + 1}. {item.name}
+                      </span>
+                      <span className="text-right font-mono">
+                        <span className="block">{item.count}</span>
+                        {(item.male !== undefined || item.female !== undefined) && (
+                          <span className="block text-xs text-slate-500">
+                            ช/ญ {item.male ?? 0}/{item.female ?? 0}
+                          </span>
+                        )}
+                      </span>
+                    </li>
+                  ))}
+                </ol>
               </div>
+              <div>
+                <h3 className="text-sm font-semibold text-slate-900">
+                  หัตถการ
+                </h3>
+                <ol className="mt-2 space-y-1 text-sm text-slate-700">
+                  {normalizeTopItems(inspect.topProcedures).map(
+                    (item, index) => (
+                      <li
+                        key={`${item.name}-${index}`}
+                        className="flex justify-between gap-2"
+                      >
+                        <span>
+                          {index + 1}. {item.name}
+                        </span>
+                        <span className="text-right font-mono">
+                          <span className="block">{item.count}</span>
+                          {(item.male !== undefined || item.female !== undefined) && (
+                            <span className="block text-xs text-slate-500">
+                              ช/ญ {item.male ?? 0}/{item.female ?? 0}
+                            </span>
+                          )}
+                        </span>
+                      </li>
+                    ),
+                  )}
+                </ol>
+              </div>
+            </div>
+            {inspect.reporterNote && (
+              <p className="mt-5 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">
+                <strong>หมายเหตุภาพรวม:</strong> {inspect.reporterNote}
+              </p>
             )}
-
-            <textarea
-              rows={7}
-              placeholder="วางข้อมูล CSV หรือ JSON ที่ต้องการนำเข้า..."
-              value={importText}
-              onChange={(e) => setImportText(e.target.value)}
-              className="w-full border border-slate-300 rounded-lg p-3 text-xs font-mono focus:outline-none focus:ring-2 focus:ring-teal-600"
-            />
-
-            <div className="flex justify-end gap-2 pt-2">
+            <div className="mt-5 flex justify-end gap-2 border-t border-slate-100 pt-4">
               <button
                 type="button"
-                onClick={() => setShowImportModal(false)}
-                className="px-4 py-2 border border-slate-300 text-slate-700 text-xs font-medium rounded-lg hover:bg-slate-50"
+                onClick={() => {
+                  const date = inspect.reportDate;
+                  setInspectDate(null);
+                  onEditDate(date);
+                }}
+                className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800"
+              >
+                แก้ไขข้อมูลวันนี้
+              </button>
+              <button
+                type="button"
+                onClick={() => setInspectDate(null)}
+                className="control-button"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+        </Dialog>
+      )}
+      {deleteDate && isAdmin && (
+        <Dialog open labelledBy="delete-title" onClose={() => !deleteBusy && setDeleteDate(null)} className="max-w-sm">
+            <h2
+              id="delete-title"
+              className="font-display text-lg font-bold text-slate-900"
+            >
+              ลบรายงานวันที่ {formatThaiDate(deleteDate, true)}?
+            </h2>
+            <p className="mt-2 text-sm text-slate-600">
+              ข้อมูลที่ลบจะไม่แสดงใน dashboard และตารางย้อนหลัง
+            </p>
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteDate(null)}
+                className="control-button"
+                disabled={deleteBusy}
+                data-dialog-initial-focus
               >
                 ยกเลิก
               </button>
               <button
-                type="submit"
-                className="px-4 py-2 bg-teal-600 text-white text-xs font-medium rounded-lg hover:bg-teal-700"
+                type="button"
+                onClick={() => void submitDelete()}
+                disabled={deleteBusy}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60"
               >
-                นำเข้าข้อมูล
+                {deleteBusy ? "กำลังลบ…" : "ยืนยันลบ"}
               </button>
             </div>
-          </form>
-        </div>
+            {deleteError && <p className="mt-3 text-sm text-rose-700" role="alert">{deleteError}</p>}
+        </Dialog>
+      )}
+      {pasteImportOpen && isAdmin && onImportRows && (
+        <Dialog
+          open
+          labelledBy="paste-import-title"
+          onClose={() => setPasteImportOpen(false)}
+          className="max-w-xl"
+        >
+          <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h2 id="paste-import-title" className="font-display text-lg font-bold text-slate-900">
+                วางข้อมูลนำเข้า
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                รองรับ CSV, JSON และ TSV จากไฟล์รายงานที่ส่งออก
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPasteImportOpen(false)}
+              className="control-button px-2"
+              aria-label="ปิด"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {pasteImportError && (
+            <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+              {pasteImportError}
+            </p>
+          )}
+          <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="paste-import-text">
+            ข้อมูลรายงาน
+            <textarea
+              id="paste-import-text"
+              value={pasteImportText}
+              onChange={(event) => setPasteImportText(event.target.value)}
+              rows={9}
+              className="control-input mt-2 min-h-48 w-full resize-y font-mono text-xs"
+              placeholder="วาง CSV, JSON หรือ TSV ที่ต้องการนำเข้า…"
+              data-dialog-initial-focus
+            />
+          </label>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" onClick={() => setPasteImportOpen(false)} className="control-button">
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={submitPasteImport}
+              className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800"
+            >
+              ตรวจสอบข้อมูล
+            </button>
+          </div>
+        </Dialog>
+      )}
+      {importPreview && (
+        <Dialog open labelledBy="import-title" onClose={() => !importBusy && setImportPreview(null)} className="max-w-lg">
+            <div className="flex items-start justify-between">
+              <div>
+                <h2
+                  id="import-title"
+                  className="font-display text-lg font-bold text-slate-900"
+                >
+                  ตรวจสอบไฟล์นำเข้า
+                </h2>
+                <p className="mt-1 text-sm text-slate-600">
+                  นำเข้าได้ {importPreview.rows.length} แถว · แถวไม่ถูกต้อง{" "}
+                  {importPreview.invalidRows} แถว
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setImportPreview(null)}
+                className="control-button px-2"
+                aria-label="ปิด"
+                disabled={importBusy}
+                data-dialog-initial-focus
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            {importPreview.duplicateDates.length > 0 && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                พบวันที่ซ้ำ {importPreview.duplicateDates.length} วัน:{" "}
+                {importPreview.duplicateDates.join(", ")}
+                <div className="mt-3 flex gap-4">
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      checked={duplicateMode === "skip"}
+                      onChange={() => setDuplicateMode("skip")}
+                    />
+                    ข้ามวันที่ซ้ำ
+                  </label>
+                  <label className="inline-flex items-center gap-2">
+                    <input
+                      type="radio"
+                      checked={duplicateMode === "overwrite"}
+                      onChange={() => setDuplicateMode("overwrite")}
+                    />
+                    เขียนทับวันที่ซ้ำ
+                  </label>
+                </div>
+              </div>
+            )}
+            {importError && (
+              <p className="mt-3 text-sm text-rose-700" role="alert">
+                {importError}
+              </p>
+            )}
+            <div className="mt-5 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setImportPreview(null)}
+                className="control-button"
+                disabled={importBusy}
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitImport()}
+                disabled={importBusy}
+                className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
+              >
+                {importBusy ? "กำลังนำเข้า…" : "ยืนยันนำเข้า"}
+              </button>
+            </div>
+        </Dialog>
       )}
     </div>
   );
-};
+}

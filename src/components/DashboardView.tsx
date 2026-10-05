@@ -1,768 +1,546 @@
-import React, { useMemo, useState } from 'react';
-import { DailyReport, formatThaiDate, normalizeTopItems } from '../types/report';
-import { Printer, Plus, Calendar, ArrowUpRight, Edit3 } from 'lucide-react';
+"use client";
 
-interface DashboardViewProps {
+import { useState } from "react";
+import {
+  CalendarDays,
+  ChevronLeft,
+  ChevronRight,
+  FilePlus2,
+  Pencil,
+  Printer,
+} from "lucide-react";
+import {
+  DailyReport,
+  formatThaiDate,
+} from "../types/report";
+import { isCalendarDate, shiftDate } from "../lib/dates";
+import {
+  aggregateRankedItems,
+  dailyTotal,
+  peakReport,
+  recordedDayAverage,
+} from "../lib/dashboard-aggregation";
+
+export interface DashboardViewProps {
   reports: DailyReport[];
-  onEditDate: (dateStr: string) => void;
-  onNewReport: () => void;
+  periodEndDate: string;
+  onPeriodChange: (date: string) => void;
+  onEditDate: (date: string) => void;
+  onNewReport: (date?: string) => void;
+}
+type RangeMode = "7D" | "MONTH" | "ALL" | "SINGLE";
+
+function safeShiftDate(value: string, delta: number): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return "";
+  try {
+    return shiftDate(value, delta);
+  } catch {
+    return "";
+  }
 }
 
-type RangeMode = 'ALL' | '7D' | 'MONTH' | 'SINGLE';
+function metric(reports: DailyReport[], key: keyof DailyReport): number {
+  return reports.reduce(
+    (total, report) => total + (Number(report[key]) || 0),
+    0,
+  );
+}
 
-export const DashboardView: React.FC<DashboardViewProps> = ({
+export function DashboardView({
   reports,
+  periodEndDate,
+  onPeriodChange,
   onEditDate,
   onNewReport,
-}) => {
-  const sortedReports = useMemo(
-    () => [...reports].sort((a, b) => a.reportDate.localeCompare(b.reportDate)),
-    [reports]
+}: DashboardViewProps) {
+  const [rangeMode, setRangeMode] = useState<RangeMode>("7D");
+  const [singleDate, setSingleDate] = useState(periodEndDate);
+  const dates = Array.from({ length: 7 }, (_, index) =>
+    safeShiftDate(periodEndDate, index - 6),
   );
-
-  const latestDate =
-    sortedReports.length > 0 ? sortedReports[sortedReports.length - 1].reportDate : '';
-  const [rangeMode, setRangeMode] = useState<RangeMode>('ALL');
-  const [selectedSingleDate, setSelectedSingleDate] = useState<string>(latestDate);
-
-  const activeSingleDate =
-    selectedSingleDate && reports.some((r) => r.reportDate === selectedSingleDate)
-      ? selectedSingleDate
-      : latestDate;
-
-  const filteredReports = useMemo(() => {
-    if (sortedReports.length === 0) return [];
-    if (rangeMode === 'SINGLE') {
-      return sortedReports.filter((r) => r.reportDate === activeSingleDate);
-    }
-    if (rangeMode === '7D') {
-      return sortedReports.slice(-7);
-    }
-    if (rangeMode === 'MONTH') {
-      const targetMonth = latestDate.slice(0, 7);
-      return sortedReports.filter((r) => r.reportDate.startsWith(targetMonth));
-    }
-    return sortedReports;
-  }, [sortedReports, rangeMode, activeSingleDate, latestDate]);
-
-  const stats = useMemo(() => {
-    const acc = {
-      totalMale: 0,
-      totalFemale: 0,
-      thaiMale: 0,
-      thaiFemale: 0,
-      genMale: 0,
-      genFemale: 0,
-      procMale: 0,
-      procFemale: 0,
-      refillMale: 0,
-      refillFemale: 0,
-      referDocMale: 0,
-      referDocFemale: 0,
-      admitMale: 0,
-      admitFemale: 0,
-      referOutMale: 0,
-      referOutFemale: 0,
-    };
-
-    const diseaseMap = new Map<string, { count: number; male: number; female: number }>();
-    const procedureMap = new Map<string, { count: number; male: number; female: number }>();
-
-    for (const r of filteredReports) {
-      acc.totalMale += Number(r.totalMale) || 0;
-      acc.totalFemale += Number(r.totalFemale) || 0;
-      acc.thaiMale += Number(r.thaiMale) || 0;
-      acc.thaiFemale += Number(r.thaiFemale) || 0;
-      acc.genMale += Number(r.genMale) || 0;
-      acc.genFemale += Number(r.genFemale) || 0;
-      acc.procMale += Number(r.procMale) || 0;
-      acc.procFemale += Number(r.procFemale) || 0;
-      acc.refillMale += Number(r.refillMale) || 0;
-      acc.refillFemale += Number(r.refillFemale) || 0;
-      acc.referDocMale += Number(r.referDocMale) || 0;
-      acc.referDocFemale += Number(r.referDocFemale) || 0;
-      acc.admitMale += Number(r.admitMale) || 0;
-      acc.admitFemale += Number(r.admitFemale) || 0;
-      acc.referOutMale += Number(r.referOutMale) || 0;
-      acc.referOutFemale += Number(r.referOutFemale) || 0;
-
-      for (const d of normalizeTopItems(r.topDiseases)) {
-        const prev = diseaseMap.get(d.name) || { count: 0, male: 0, female: 0 };
-        diseaseMap.set(d.name, {
-          count: prev.count + d.count,
-          male: prev.male + (d.male || 0),
-          female: prev.female + (d.female || 0),
-        });
-      }
-
-      for (const p of normalizeTopItems(r.topProcedures)) {
-        const prev = procedureMap.get(p.name) || { count: 0, male: 0, female: 0 };
-        procedureMap.set(p.name, {
-          count: prev.count + p.count,
-          male: prev.male + (p.male || 0),
-          female: prev.female + (p.female || 0),
-        });
-      }
-    }
-
-    const totalAll = acc.totalMale + acc.totalFemale;
-    const totalThaiMed = acc.thaiMale + acc.thaiFemale;
-
-    const topDiseases = Array.from(diseaseMap.entries())
-      .map(([name, val]) => ({ name, ...val }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-
-    const topProcedures = Array.from(procedureMap.entries())
-      .map(([name, val]) => ({ name, ...val }))
-      .sort((a, b) => b.count - a.count)
-      .slice(0, 5);
-
-    const daysCount = Math.max(1, filteredReports.length);
-    const avgPerDay = Math.round(totalAll / daysCount);
-
-    return {
-      ...acc,
-      totalAll,
-      totalThaiMed,
-      avgPerDay,
-      topDiseases,
-      topProcedures,
-    };
-  }, [filteredReports]);
-
-  if (reports.length === 0) {
-    return (
-      <div className="bg-white border border-slate-200 rounded-xl p-12 text-center max-w-xl mx-auto my-8">
-        <h2 className="text-xl font-bold text-slate-900">ยังไม่มีข้อมูลรายงานในระบบ</h2>
-        <p className="text-sm text-slate-600 mt-2">
-          เริ่มต้นบันทึกข้อมูลผู้รับบริการประจำวัน หรือบันทึกข้อมูลย้อนหลังของหน่วยบริการชั่วคราว รพ.องครักษ์ เพื่อแสดงผลกราฟและสถิติวิเคราะห์
-        </p>
-        <button
-          onClick={onNewReport}
-          className="mt-6 inline-flex items-center gap-2 px-4 py-2 bg-teal-600 text-white text-sm font-medium rounded-lg hover:bg-teal-700 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          บันทึกข้อมูลประจำวัน / ย้อนหลัง
-        </button>
-      </div>
-    );
-  }
-
+  const byDate = new Map(reports.map((report) => [report.reportDate, report]));
+  const visibleDates =
+    rangeMode === "7D"
+      ? dates
+      : rangeMode === "SINGLE"
+        ? [singleDate]
+        : reports
+            .filter((report) =>
+              rangeMode === "MONTH"
+                ? report.reportDate.slice(0, 7) === periodEndDate.slice(0, 7)
+                : true,
+            )
+            .map((report) => report.reportDate);
+  const periodReports = visibleDates.flatMap((date) => {
+    const report = byDate.get(date);
+    return report ? [report] : [];
+  });
+  const totalMale = metric(periodReports, "totalMale");
+  const totalFemale = metric(periodReports, "totalFemale");
+  const total = totalMale + totalFemale;
+  const averageDenominator = periodReports.length;
+  const missing =
+    rangeMode === "7D" ? dates.filter((date) => !byDate.has(date)) : [];
+  const diseases = aggregateRankedItems(periodReports, "topDiseases");
+  const procedures = aggregateRankedItems(periodReports, "topProcedures");
+  const trendDates = rangeMode === "7D" ? dates : visibleDates;
+  const maxTrendTotal = Math.max(1, ...trendDates.map((date) => {
+    const report = byDate.get(date);
+    return report ? dailyTotal(report) : 0;
+  }));
+  const peak = peakReport(periodReports);
   const serviceRows = [
-    {
-      label: 'ตรวจโรคทั่วไป (General OPD)',
-      male: stats.genMale,
-      female: stats.genFemale,
-      total: stats.genMale + stats.genFemale,
-    },
-    {
-      label: 'แพทย์แผนไทย (Thai Traditional Medicine)',
-      male: stats.thaiMale,
-      female: stats.thaiFemale,
-      total: stats.thaiMale + stats.thaiFemale,
-    },
-    {
-      label: 'รับยาต่อเนื่อง / เติมยาเดิม (Medication Refill)',
-      male: stats.refillMale,
-      female: stats.refillFemale,
-      total: stats.refillMale + stats.refillFemale,
-    },
-    {
-      label: 'ทำหัตถการ / ทำแผล / ฉีดยา (Procedures)',
-      male: stats.procMale,
-      female: stats.procFemale,
-      total: stats.procMale + stats.procFemale,
-    },
-    {
-      label: 'ขอใบส่งตัวรักษาต่อ (Referral Document)',
-      male: stats.referDocMale,
-      female: stats.referDocFemale,
-      total: stats.referDocMale + stats.referDocFemale,
-    },
-    {
-      label: 'รับไว้รักษาในโรงพยาบาล (Admit Inpatient)',
-      male: stats.admitMale,
-      female: stats.admitFemale,
-      total: stats.admitMale + stats.admitFemale,
-    },
-    {
-      label: 'ส่งต่อรักษาโรงพยาบาลอื่น (Refer Out)',
-      male: stats.referOutMale,
-      female: stats.referOutFemale,
-      total: stats.referOutMale + stats.referOutFemale,
-    },
-  ];
-
-  const maxServiceTotal = Math.max(1, ...serviceRows.map((s) => s.total));
-  const maxDailyTotal = Math.max(
-    1,
-    ...sortedReports.map((r) => (Number(r.totalMale) || 0) + (Number(r.totalFemale) || 0))
-  );
-  const maxDiseaseCount = Math.max(1, ...stats.topDiseases.map((d) => d.count));
-  const maxProcedureCount = Math.max(1, ...stats.topProcedures.map((p) => p.count));
-
-  const malePct = stats.totalAll > 0 ? Math.round((stats.totalMale / stats.totalAll) * 100) : 0;
-  const femalePct = stats.totalAll > 0 ? 100 - malePct : 0;
-
+    [
+      "ตรวจโรคทั่วไป",
+      metric(periodReports, "genMale"),
+      metric(periodReports, "genFemale"),
+    ],
+    [
+      "แพทย์แผนไทย",
+      metric(periodReports, "thaiMale"),
+      metric(periodReports, "thaiFemale"),
+    ],
+    [
+      "ทำหัตถการ",
+      metric(periodReports, "procMale"),
+      metric(periodReports, "procFemale"),
+    ],
+    [
+      "รับยาต่อเนื่อง / เติมยาเดิม",
+      metric(periodReports, "refillMale"),
+      metric(periodReports, "refillFemale"),
+    ],
+    [
+      "ขอใบส่งตัว",
+      metric(periodReports, "referDocMale"),
+      metric(periodReports, "referDocFemale"),
+    ],
+    [
+      "Admit",
+      metric(periodReports, "admitMale"),
+      metric(periodReports, "admitFemale"),
+    ],
+    [
+      "Refer Out",
+      metric(periodReports, "referOutMale"),
+      metric(periodReports, "referOutFemale"),
+    ],
+  ] as const;
   return (
-    <div className="space-y-8">
-      {/* Header & Filter Controls */}
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4 border-b border-slate-200 pb-5">
+    <div className="mx-auto max-w-7xl space-y-6">
+      <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <div className="flex items-center gap-2 text-xs text-slate-500">
-            <span>โรงพยาบาลองครักษ์ จังหวัดนครนายก</span>
-            <span aria-hidden="true">·</span>
-            <span>หน่วยบริการชั่วคราว</span>
-            <span aria-hidden="true">·</span>
-            <span className="tabular-nums">
-              {rangeMode === 'SINGLE'
-                ? `ข้อมูลประจำวันที่ ${formatThaiDate(activeSingleDate)}`
-                : `วิเคราะห์ข้อมูลสะสม ${filteredReports.length} วันทำการ`}
-            </span>
-          </div>
-          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mt-1 tracking-tight">
-            รายงานสถิติผู้รับบริการหน่วยบริการชั่วคราว
+          <p className="text-sm text-slate-500">
+            หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์
+          </p>
+          <h1 className="mt-1 font-display text-2xl font-bold tracking-tight text-slate-950">
+            ภาพรวมสถิติผู้รับบริการ
           </h1>
         </div>
-
-        <div className="flex flex-wrap items-center gap-3 no-print">
-          {/* Segmented Range Controls */}
-          <div className="flex items-center gap-1 p-1 bg-slate-200/70 rounded-lg">
-            <button
-              type="button"
-              onClick={() => setRangeMode('ALL')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-                rangeMode === 'ALL'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              ทั้งหมด ({sortedReports.length} วัน)
-            </button>
-            <button
-              type="button"
-              onClick={() => setRangeMode('7D')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-                rangeMode === '7D'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              7 วันล่าสุด
-            </button>
-            <button
-              type="button"
-              onClick={() => setRangeMode('MONTH')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-                rangeMode === 'MONTH'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              เดือนล่าสุด
-            </button>
-            <button
-              type="button"
-              onClick={() => setRangeMode('SINGLE')}
-              className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
-                rangeMode === 'SINGLE'
-                  ? 'bg-white text-slate-900 shadow-xs'
-                  : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              รายวัน
-            </button>
-          </div>
-
-          {/* Date Selector when SINGLE or quick jump */}
-          <div className="flex items-center gap-2">
-            <Calendar className="w-4 h-4 text-slate-400 shrink-0" />
-            <select
-              aria-label="เลือกวันที่รายงาน"
-              value={rangeMode === 'SINGLE' ? activeSingleDate : ''}
-              onChange={(e) => {
-                if (e.target.value) {
-                  setSelectedSingleDate(e.target.value);
-                  setRangeMode('SINGLE');
-                } else {
-                  setRangeMode('ALL');
-                }
-              }}
-              className="border border-slate-300 bg-white rounded-lg px-3 py-1.5 text-xs font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-teal-600 tabular-nums"
-            >
-              <option value="">ดูภาพรวมหลายวัน...</option>
-              {[...sortedReports].reverse().map((r) => (
-                <option key={r.reportDate} value={r.reportDate}>
-                  {r.reportDate} ({formatThaiDate(r.reportDate, true)})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {activeSingleDate && (
-            <button
-              type="button"
-              onClick={() => onEditDate(activeSingleDate)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-teal-800 bg-teal-50 border border-teal-200 rounded-lg hover:bg-teal-100 transition-colors whitespace-nowrap"
-            >
-              <Edit3 className="w-3.5 h-3.5" />
-              แก้ไขข้อมูล ({activeSingleDate})
-            </button>
-          )}
-
+        <div className="no-print flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => onPeriodChange(safeShiftDate(periodEndDate, -7))}
+            className="control-button"
+            aria-label="ช่วงก่อนหน้า"
+          >
+            <ChevronLeft className="h-4 w-4" />
+            ก่อนหน้า
+          </button>
+          <label htmlFor="period-end" className="sr-only">
+            วันสิ้นสุดช่วงรายงาน
+          </label>
+          <input
+            id="period-end"
+            type="date"
+            value={periodEndDate}
+            onChange={(event) => {
+              if (isCalendarDate(event.target.value)) onPeriodChange(event.target.value);
+            }}
+            className="control-input font-mono tabular-nums"
+          />
+          <button
+            type="button"
+            onClick={() => onPeriodChange(safeShiftDate(periodEndDate, 7))}
+            className="control-button"
+            aria-label="ช่วงถัดไป"
+          >
+            ถัดไป
+            <ChevronRight className="h-4 w-4" />
+          </button>
           <button
             type="button"
             onClick={() => window.print()}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition-colors whitespace-nowrap"
+            className="control-button"
           >
-            <Printer className="w-3.5 h-3.5" />
-            พิมพ์รายงาน
+            <Printer className="h-4 w-4" />
+            พิมพ์
+          </button>
+          <button
+            type="button"
+            onClick={() => onNewReport()}
+            className="inline-flex min-h-11 items-center gap-2 rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800"
+          >
+            <FilePlus2 className="h-4 w-4" />
+            บันทึกวันนี้
           </button>
         </div>
       </div>
-
-      {/* Primary KPI Grid (Single-Elevation Cards) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* KPI 1: Total Visits */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
-          <div>
-            <div className="text-xs text-slate-500 font-medium">ผู้รับบริการทั้งหมด</div>
-            <div className="mt-2 flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {stats.totalAll.toLocaleString()}
-              </span>
-              <span className="text-xs text-slate-500 tabular-nums">
-                เฉลี่ย {stats.avgPerDay.toLocaleString()} ราย/วัน
-              </span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 tabular-nums">
-            <span>ชาย {stats.totalMale.toLocaleString()} ({malePct}%)</span>
-            <span aria-hidden="true">·</span>
-            <span>หญิง {stats.totalFemale.toLocaleString()} ({femalePct}%)</span>
-          </div>
-        </div>
-
-        {/* KPI 2: Thai Traditional Medicine */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
-          <div>
-            <div className="text-xs text-slate-500 font-medium">ผู้รับบริการแพทย์แผนไทย</div>
-            <div className="mt-2 flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {stats.totalThaiMed.toLocaleString()}
-              </span>
-              <span className="text-xs text-teal-700 font-medium tabular-nums">
-                คลินิกแพทย์แผนไทย
-              </span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 tabular-nums">
-            <span>ชาย {stats.thaiMale.toLocaleString()} ราย</span>
-            <span aria-hidden="true">·</span>
-            <span>หญิง {stats.thaiFemale.toLocaleString()} ราย</span>
-          </div>
-        </div>
-
-        {/* KPI 3: General OPD & Medication Refill */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
-          <div>
-            <div className="text-xs text-slate-500 font-medium">ตรวจโรคทั่วไป & รับยาต่อเนื่อง</div>
-            <div className="mt-2 flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {(
-                  stats.genMale +
-                  stats.genFemale +
-                  stats.refillMale +
-                  stats.refillFemale
-                ).toLocaleString()}
-              </span>
-              <span className="text-xs text-slate-500 tabular-nums">
-                ตรวจโรค {(stats.genMale + stats.genFemale).toLocaleString()} ราย
-              </span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 tabular-nums">
-            <span>OPD (ช {stats.genMale} / ญ {stats.genFemale})</span>
-            <span aria-hidden="true">·</span>
-            <span>รับยาเดิม {(stats.refillMale + stats.refillFemale).toLocaleString()} ราย</span>
-          </div>
-        </div>
-
-        {/* KPI 4: Procedures, Referrals & Admissions */}
-        <div className="bg-white border border-slate-200 rounded-xl p-5 flex flex-col justify-between">
-          <div>
-            <div className="text-xs text-slate-500 font-medium">หัตถการ · ใบส่งตัว · Admit · Refer</div>
-            <div className="mt-2 flex items-baseline justify-between">
-              <span className="text-3xl font-bold text-slate-900 tabular-nums">
-                {(stats.procMale + stats.procFemale).toLocaleString()}
-              </span>
-              <span className="text-xs text-slate-500 tabular-nums">
-                ทำหัตถการรวม (ราย)
-              </span>
-            </div>
-          </div>
-          <div className="mt-4 pt-3 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 tabular-nums">
-            <span>ใบส่งตัว {stats.referDocMale + stats.referDocFemale}</span>
-            <span aria-hidden="true">·</span>
-            <span>Admit {stats.admitMale + stats.admitFemale}</span>
-            <span aria-hidden="true">·</span>
-            <span>Refer Out {stats.referOutMale + stats.referOutFemale}</span>
-          </div>
-        </div>
+      <div
+        className="no-print flex flex-wrap items-center gap-2"
+        role="tablist"
+        aria-label="ช่วงสถิติ"
+      >
+        {(
+          [
+            ["7D", "7 วัน"],
+            ["MONTH", "เดือนนี้"],
+            ["ALL", "ทั้งหมด"],
+            ["SINGLE", "วันที่เดียว"],
+          ] as const
+        ).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="tab"
+            aria-selected={rangeMode === value}
+            onClick={() => setRangeMode(value)}
+            className={
+              rangeMode === value
+                ? "rounded-lg bg-teal-700 px-3 py-2 text-xs font-semibold text-white"
+                : "control-button"
+            }
+          >
+            {label}
+          </button>
+        ))}
+        {rangeMode === "SINGLE" && (
+          <>
+            <label htmlFor="single-report-date" className="sr-only">
+              วันที่เดียวที่ต้องการดู
+            </label>
+            <input
+              id="single-report-date"
+              type="date"
+              value={singleDate}
+              onChange={(event) => {
+                if (isCalendarDate(event.target.value)) setSingleDate(event.target.value);
+              }}
+              className="control-input font-mono text-xs"
+            />
+          </>
+        )}
       </div>
-
-      {/* Main Analytics Row: Daily Trend Chart + Service Breakdown */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Daily Volume Trend (7 Columns) */}
-        <div className="lg:col-span-7 bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between">
-          <div>
-            <div className="flex flex-wrap items-center justify-between gap-2 pb-4 border-b border-slate-100">
-              <div>
-                <h2 className="text-base font-bold text-slate-900">
-                  แนวโน้มผู้รับบริการรายวัน (แยกตามเพศ)
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  คลิกที่แท่งกราฟเพื่อดูหรือแก้ไขข้อมูลย้อนหลังของแต่ละวัน
-                </p>
-              </div>
-              <div className="flex items-center gap-4 text-xs text-slate-600">
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-xs bg-sky-600 inline-block" />
-                  ชาย (Male)
-                </span>
-                <span className="inline-flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-xs bg-teal-500 inline-block" />
-                  หญิง (Female)
-                </span>
-              </div>
-            </div>
-
-            {/* Interactive Bar Chart */}
-            <div className="mt-6 pt-4">
-              <div className="h-56 flex items-end gap-2 sm:gap-3 border-b border-slate-200 pb-2 px-1">
-                {sortedReports.map((r) => {
-                  const m = Number(r.totalMale) || 0;
-                  const f = Number(r.totalFemale) || 0;
-                  const tot = m + f;
-                  const heightPct = Math.max(8, Math.round((tot / maxDailyTotal) * 100));
-                  const maleRatio = tot > 0 ? Math.round((m / tot) * 100) : 50;
-                  const femaleRatio = 100 - maleRatio;
-                  const isSelected =
-                    rangeMode === 'SINGLE' && activeSingleDate === r.reportDate;
-
-                  return (
-                    <button
-                      key={r.reportDate}
-                      type="button"
-                      onClick={() => {
-                        if (rangeMode === 'SINGLE' && activeSingleDate === r.reportDate) {
-                          setRangeMode('ALL');
-                        } else {
-                          setSelectedSingleDate(r.reportDate);
-                          setRangeMode('SINGLE');
-                        }
-                      }}
-                      title={`${formatThaiDate(r.reportDate)}: รวม ${tot} ราย (ชาย ${m}, หญิง ${f})`}
-                      className={`group flex-1 flex flex-col items-center justify-end h-full focus:outline-none transition-opacity ${
-                        rangeMode === 'SINGLE' && !isSelected
-                          ? 'opacity-45 hover:opacity-80'
-                          : 'opacity-100'
-                      }`}
-                    >
-                      <span className="text-[11px] font-mono tabular-nums text-slate-700 font-semibold mb-1.5">
-                        {tot}
-                      </span>
-                      <div
-                        style={{ height: `${heightPct}%` }}
-                        className={`w-full max-w-[42px] rounded-t-md overflow-hidden flex flex-col justify-end transition-transform group-hover:-translate-y-0.5 ${
-                          isSelected ? 'ring-2 ring-slate-900 ring-offset-2' : ''
-                        }`}
-                      >
-                        <div
-                          style={{ height: `${femaleRatio}%` }}
-                          className="w-full bg-teal-500 transition-colors"
-                        />
-                        <div
-                          style={{ height: `${maleRatio}%` }}
-                          className="w-full bg-sky-600 transition-colors"
-                        />
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-              {/* X-Axis Labels */}
-              <div className="flex items-center gap-2 sm:gap-3 pt-2 px-1">
-                {sortedReports.map((r) => {
-                  const parts = r.reportDate.split('-');
-                  const shortLabel =
-                    parts.length === 3 ? `${parts[2]}/${parts[1]}` : r.reportDate;
-                  const isSelected =
-                    rangeMode === 'SINGLE' && activeSingleDate === r.reportDate;
-                  return (
-                    <div
-                      key={r.reportDate}
-                      className={`flex-1 text-center text-[11px] tabular-nums truncate ${
-                        isSelected ? 'font-bold text-slate-900' : 'text-slate-500'
-                      }`}
-                    >
-                      {shortLabel}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Bottom summary bar */}
-          <div className="mt-6 pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-            <span>
-              วันที่มีผู้รับบริการสูงสุด:{' '}
-              <strong className="text-slate-800 tabular-nums">
-                {(() => {
-                  const peak = [...sortedReports].sort(
-                    (a, b) =>
-                      b.totalMale + b.totalFemale - (a.totalMale + a.totalFemale)
-                  )[0];
-                  return peak
-                    ? `${formatThaiDate(peak.reportDate, true)} (${peak.totalMale + peak.totalFemale} ราย)`
-                    : '-';
-                })()}
-              </strong>
-            </span>
-            {activeSingleDate && (
-              <button
-                type="button"
-                onClick={() => onEditDate(activeSingleDate)}
-                className="inline-flex items-center gap-1 text-teal-700 font-medium hover:underline no-print"
-              >
-                แก้ไขข้อมูลย้อนหลังวันที่ {activeSingleDate}
-                <ArrowUpRight className="w-3.5 h-3.5" />
-              </button>
+      <div className="flex items-center gap-2 text-sm text-slate-600">
+        <CalendarDays className="h-4 w-4 text-teal-700" />
+        <span>
+          {rangeMode === "7D"
+            ? `แสดง 7 วันปฏิทิน: ${formatThaiDate(dates[0], true)} – ${formatThaiDate(dates[6], true)}`
+            : rangeMode === "MONTH"
+              ? `ข้อมูลเดือน ${formatThaiDate(periodEndDate).split(" ")[1]} ${formatThaiDate(periodEndDate).split(" ")[2]}`
+              : rangeMode === "SINGLE"
+                ? `วันที่ ${formatThaiDate(singleDate)}`
+                : "ข้อมูลทั้งหมดที่บันทึกไว้"}
+        </span>
+      </div>
+      {missing.length > 0 && (
+        <div
+          role="status"
+          className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900"
+        >
+          ยังไม่มีรายงานสำหรับ {missing.length} วัน:{" "}
+          {missing.map((date) => (
+            <button
+              type="button"
+              key={date}
+              onClick={() => onNewReport(date)}
+              className="ml-1 font-semibold underline underline-offset-2"
+            >
+              {formatThaiDate(date, true)}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="grid gap-4 sm:grid-cols-3">
+        <article className="rounded-xl border border-slate-200 bg-white p-5">
+          <p className="text-sm text-slate-500">ผู้รับบริการรวมในช่วงนี้</p>
+          <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-slate-950">
+            {total.toLocaleString("th-TH")}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            ชาย {totalMale.toLocaleString("th-TH")} · หญิง{" "}
+            {totalFemale.toLocaleString("th-TH")}
+          </p>
+        </article>
+        <article className="rounded-xl border border-slate-200 bg-white p-5">
+          <p className="text-sm text-slate-500">วันที่บันทึกแล้ว</p>
+          <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-slate-950">
+            {periodReports.length}
+            {rangeMode === "7D" && (
+              <span className="text-lg font-normal text-slate-500"> / 7</span>
             )}
-          </div>
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            {averageDenominator
+              ? `เฉลี่ย ${recordedDayAverage(periodReports).toLocaleString("th-TH")} รายต่อวันที่บันทึก`
+              : "ยังไม่มีวันที่บันทึกในช่วงนี้"}
+          </p>
+        </article>
+        <article className="rounded-xl border border-slate-200 bg-white p-5">
+          <p className="text-sm text-slate-500">แพทย์แผนไทยในช่วงนี้</p>
+          <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-slate-950">
+            {(
+              metric(periodReports, "thaiMale") +
+              metric(periodReports, "thaiFemale")
+            ).toLocaleString("th-TH")}
+          </p>
+          <p className="mt-1 text-xs text-slate-500">
+            ยอดหมวดบริการอาจนับซ้ำกับยอดรวม
+          </p>
+        </article>
+      </div>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-100 px-4 py-4 sm:px-6">
+          <h2 className="font-display text-base font-bold text-slate-900">
+            รายงานรายวัน
+          </h2>
         </div>
-
-        {/* Service Channel Breakdown (5 Columns) */}
-        <div className="lg:col-span-5 bg-white border border-slate-200 rounded-xl p-6 flex flex-col justify-between">
-          <div>
-            <div className="pb-4 border-b border-slate-100">
-              <h2 className="text-base font-bold text-slate-900">
-                จำแนกตามประเภทการรับบริการ
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                เปรียบเทียบจำนวนผู้รับบริการแยกตามแผนกและเพศ (ชาย / หญิง)
-              </p>
-            </div>
-
-            <div className="mt-4 space-y-3.5">
-              {serviceRows.map((row) => {
-                const widthPct = Math.max(2, Math.round((row.total / maxServiceTotal) * 100));
-                const mPct = row.total > 0 ? Math.round((row.male / row.total) * 100) : 0;
-                const fPct = row.total > 0 ? 100 - mPct : 0;
-
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[700px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-600">
+              <tr>
+                <th className="px-4 py-3 font-semibold sm:px-6">วันที่</th>
+                <th className="px-4 py-3 text-right font-semibold">รวม ชาย</th>
+                <th className="px-4 py-3 text-right font-semibold">รวม หญิง</th>
+                <th className="px-4 py-3 text-right font-semibold">
+                  รวมทั้งหมด
+                </th>
+                <th className="px-4 py-3 font-semibold">สถานะ</th>
+                <th className="px-4 py-3 text-right font-semibold">จัดการ</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {visibleDates.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="px-4 py-12 text-center sm:px-6">
+                    <p className="text-sm font-semibold text-slate-700">
+                      ยังไม่มีรายงานในช่วงนี้
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500">
+                      เลือกช่วงอื่นหรือเริ่มบันทึกรายงานวันนี้
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => onNewReport()}
+                      className="control-button mt-4"
+                    >
+                      บันทึกรายงาน
+                    </button>
+                  </td>
+                </tr>
+              ) : visibleDates.map((date) => {
+                const report = byDate.get(date);
+                const dayTotal = report
+                  ? report.totalMale + report.totalFemale
+                  : 0;
                 return (
-                  <div key={row.label} className="space-y-1.5">
-                    <div className="flex items-baseline justify-between text-xs">
-                      <span className="font-medium text-slate-800">{row.label}</span>
-                      <span className="tabular-nums text-slate-600">
-                        <strong className="text-slate-900 font-semibold text-sm">
-                          {row.total.toLocaleString()}
-                        </strong>{' '}
-                        (ช {row.male.toLocaleString()} · ญ {row.female.toLocaleString()})
+                  <tr key={date} className="hover:bg-slate-50">
+                    <td className="px-4 py-3 sm:px-6">
+                      <span className="font-medium text-slate-900">
+                        {formatThaiDate(date, true)}
                       </span>
-                    </div>
-                    <div className="w-full h-2.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${widthPct}%` }}
-                        className="h-full flex rounded-full overflow-hidden"
-                      >
-                        <div
-                          style={{ width: `${mPct}%` }}
-                          className="bg-sky-600 h-full"
-                          title={`ชาย ${row.male} ราย`}
-                        />
-                        <div
-                          style={{ width: `${fPct}%` }}
-                          className="bg-teal-500 h-full"
-                          title={`หญิง ${row.female} ราย`}
-                        />
-                      </div>
-                    </div>
-                  </div>
+                      <span className="ml-2 font-mono text-xs text-slate-500">
+                        {date}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums">
+                      {report?.totalMale ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono tabular-nums">
+                      {report?.totalFemale ?? "—"}
+                    </td>
+                    <td className="px-4 py-3 text-right font-mono font-semibold tabular-nums">
+                      {report ? dayTotal : "—"}
+                    </td>
+                    <td className="px-4 py-3">
+                      {report ? (
+                        <span className="text-teal-700">บันทึกแล้ว</span>
+                      ) : (
+                        <span className="text-amber-700">ยังไม่มีข้อมูล</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {report ? (
+                        <button
+                          type="button"
+                          onClick={() => onEditDate(date)}
+                          className="inline-flex min-h-11 items-center gap-1 rounded-lg px-3 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
+                          แก้ไข
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => onNewReport(date)}
+                          className="inline-flex min-h-11 items-center rounded-lg px-3 text-xs font-semibold text-teal-700 hover:bg-teal-50"
+                        >
+                          เพิ่มรายงาน
+                        </button>
+                      )}
+                    </td>
+                  </tr>
                 );
               })}
-            </div>
-          </div>
-
-          <div className="mt-6 pt-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500 tabular-nums">
-            <span>สัดส่วนเพศรวม: ชาย {malePct}% · หญิง {femalePct}%</span>
-            <span>แพทย์แผนไทย {stats.totalThaiMed.toLocaleString()} ราย</span>
-          </div>
+            </tbody>
+          </table>
         </div>
-      </div>
-
-      {/* Top 5 Diseases & Top 5 Procedures */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Top 5 Diseases */}
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
-          <div className="flex items-baseline justify-between pb-4 border-b border-slate-100">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                01. 5 อันดับโรคที่พบบ่อย (Top 5 Diseases)
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                รหัสโรค ICD-10 และกลุ่มอาการที่ผู้ป่วยมารับบริการสูงสุดในช่วงเวลาที่เลือก
-              </p>
-            </div>
-            <span className="text-xs text-slate-500 tabular-nums">จำนวน (ราย)</span>
-          </div>
-
-          {stats.topDiseases.length === 0 ? (
-            <p className="text-sm text-slate-400 py-8 text-center">
-              ไม่มีข้อมูลการจัดอันดับโรคในช่วงเวลานี้
-            </p>
-          ) : (
-            <div className="mt-4 divide-y divide-slate-100">
-              {stats.topDiseases.map((item, idx) => {
-                const barW = Math.max(4, Math.round((item.count / maxDiseaseCount) * 100));
-                return (
-                  <div key={item.name} className="py-3 first:pt-1 last:pb-1 space-y-1.5">
-                    <div className="flex items-baseline justify-between gap-4 text-sm">
-                      <div className="flex items-baseline gap-2.5 min-w-0">
-                        <span className="text-xs font-mono font-semibold text-teal-700 tabular-nums shrink-0">
-                          0{idx + 1}.
-                        </span>
-                        <span className="font-medium text-slate-900 truncate" title={item.name}>
-                          {item.name}
-                        </span>
-                      </div>
-                      <div className="shrink-0 text-right tabular-nums">
-                        <span className="font-bold text-slate-900">{item.count.toLocaleString()}</span>
-                        {(item.male > 0 || item.female > 0) && (
-                          <span className="text-xs text-slate-500 ml-1.5">
-                            (ช {item.male} · ญ {item.female})
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${barW}%` }}
-                        className="h-full bg-teal-600 rounded-full"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+      </section>
+      <section className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+        <div className="border-b border-slate-100 px-4 py-4 sm:px-6">
+          <h2 className="font-display text-base font-bold text-slate-900">
+            สรุปตามประเภทบริการ
+          </h2>
         </div>
-
-        {/* Top 5 Procedures */}
-        <div className="bg-white border border-slate-200 rounded-xl p-6">
-          <div className="flex items-baseline justify-between pb-4 border-b border-slate-100">
-            <div>
-              <h2 className="text-base font-bold text-slate-900">
-                02. 5 อันดับหัตถการ (Top 5 Procedures)
-              </h2>
-              <p className="text-xs text-slate-500 mt-0.5">
-                รายการหัตถการทางการพยาบาล แพทย์แผนไทย และการตรวจพิเศษที่ให้บริการสูงสุด
-              </p>
-            </div>
-            <span className="text-xs text-slate-500 tabular-nums">จำนวน (ครั้ง)</span>
-          </div>
-
-          {stats.topProcedures.length === 0 ? (
-            <p className="text-sm text-slate-400 py-8 text-center">
-              ไม่มีข้อมูลการจัดอันดับหัตถการในช่วงเวลานี้
-            </p>
-          ) : (
-            <div className="mt-4 divide-y divide-slate-100">
-              {stats.topProcedures.map((item, idx) => {
-                const barW = Math.max(4, Math.round((item.count / maxProcedureCount) * 100));
-                return (
-                  <div key={item.name} className="py-3 first:pt-1 last:pb-1 space-y-1.5">
-                    <div className="flex items-baseline justify-between gap-4 text-sm">
-                      <div className="flex items-baseline gap-2.5 min-w-0">
-                        <span className="text-xs font-mono font-semibold text-sky-700 tabular-nums shrink-0">
-                          0{idx + 1}.
-                        </span>
-                        <span className="font-medium text-slate-900 truncate" title={item.name}>
-                          {item.name}
-                        </span>
-                      </div>
-                      <div className="shrink-0 text-right tabular-nums">
-                        <span className="font-bold text-slate-900">{item.count.toLocaleString()}</span>
-                        {(item.male > 0 || item.female > 0) && (
-                          <span className="text-xs text-slate-500 ml-1.5">
-                            (ช {item.male} · ญ {item.female})
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        style={{ width: `${barW}%` }}
-                        className="h-full bg-sky-600 rounded-full"
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[600px] text-left text-sm">
+            <thead className="bg-slate-50 text-xs text-slate-600">
+              <tr>
+                <th className="px-4 py-3 font-semibold">ประเภทบริการ</th>
+                <th className="px-4 py-3 text-right font-semibold">ชาย</th>
+                <th className="px-4 py-3 text-right font-semibold">หญิง</th>
+                <th className="px-4 py-3 text-right font-semibold">รวม</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {serviceRows.map(([label, male, female]) => (
+                <tr key={label}>
+                  <td className="px-4 py-3">{label}</td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums">
+                    {male}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono tabular-nums">
+                    {female}
+                  </td>
+                  <td className="px-4 py-3 text-right font-mono font-semibold tabular-nums">
+                    {male + female}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
-      </div>
-
-      {/* Daily Shift Notes Log */}
-      <div className="bg-white border border-slate-200 rounded-xl p-6">
-        <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+      </section>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
           <div>
-            <h2 className="text-base font-bold text-slate-900">
-              03. บันทึกหมายเหตุประจำวัน (Reporter Notes)
-            </h2>
-            <p className="text-xs text-slate-500 mt-0.5">
-              สรุปเหตุการณ์สำคัญและการส่งต่อผู้ป่วยจากเจ้าหน้าที่เวรประจำวัน
-            </p>
+            <h2 className="font-display text-base font-bold text-slate-900">แนวโน้มผู้รับบริการรายวัน</h2>
+            <p className="mt-1 text-xs text-slate-500">แยกชายและหญิงในช่วงที่เลือก · คลิกวันที่เพื่อแก้ไข</p>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-slate-600">
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-sky-600" />ชาย</span>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-teal-500" />หญิง</span>
           </div>
         </div>
-
-        <div className="mt-2 divide-y divide-slate-100">
-          {[...filteredReports]
-            .reverse()
-            .slice(0, 5)
-            .map((r) => (
-              <div
-                key={r.reportDate}
-                className="py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-sm"
-              >
-                <div className="space-y-0.5">
-                  <div className="flex items-center gap-2 text-xs text-slate-500 tabular-nums">
-                    <span className="font-semibold text-slate-800">{r.reportDate}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{formatThaiDate(r.reportDate, true)}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>ผู้รับบริการรวม {(r.totalMale + r.totalFemale).toLocaleString()} ราย</span>
-                    <span aria-hidden="true">·</span>
-                    <span>แพทย์แผนไทย {((r.thaiMale || 0) + (r.thaiFemale || 0)).toLocaleString()} ราย</span>
-                  </div>
-                  <p className="text-slate-700">
-                    {r.reporterNote ? r.reporterNote : 'ไม่มีหมายเหตุเพิ่มเติม'}
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => onEditDate(r.reportDate)}
-                  className="text-xs text-teal-700 font-medium hover:underline shrink-0 self-start sm:self-center no-print"
-                >
-                  แก้ไขข้อมูลย้อนหลัง
-                </button>
-              </div>
-            ))}
+        <div className="mt-5 flex h-56 items-end gap-2 overflow-x-auto border-b border-slate-200 px-1 pb-2 sm:gap-3">
+          {trendDates.map((date) => {
+            const report = byDate.get(date);
+            const totalForDay = report ? dailyTotal(report) : 0;
+            const height = totalForDay ? Math.max(8, Math.round((totalForDay / maxTrendTotal) * 100)) : 2;
+            const malePercent = totalForDay ? Math.round(((report?.totalMale ?? 0) / totalForDay) * 100) : 0;
+            return (
+              <button type="button" key={date} onClick={() => report ? onEditDate(date) : onNewReport(date)} aria-label={report ? `${formatThaiDate(date, true)} ชาย ${report.totalMale} ราย หญิง ${report.totalFemale} ราย รวม ${totalForDay} ราย` : `${formatThaiDate(date, true)} ยังไม่มีรายงาน`} className="group flex h-full min-w-10 flex-1 flex-col items-center justify-end focus:outline-none focus:ring-2 focus:ring-teal-700" title={report ? `${formatThaiDate(date, true)} รวม ${totalForDay} ราย` : `${formatThaiDate(date, true)} ยังไม่มีรายงาน`}>
+                <span className="mb-1 font-mono text-[11px] tabular-nums text-slate-700">{report ? totalForDay : "—"}</span>
+                <span className={`flex w-full max-w-12 flex-col justify-end overflow-hidden rounded-t-md ${report ? "bg-teal-500" : "bg-slate-200"}`} style={{ height: `${height}%` }}>
+                  {report && <><span className="w-full bg-teal-500" style={{ height: `${100 - malePercent}%` }} /><span className="w-full bg-sky-600" style={{ height: `${malePercent}%` }} /></>}
+                </span>
+                <span className="mt-2 truncate text-[11px] tabular-nums text-slate-500">{date.slice(5)}</span>
+              </button>
+            );
+          })}
         </div>
+        <p className="mt-4 text-xs text-slate-600">
+          วันที่มีผู้รับบริการสูงสุด: <strong className="text-slate-900">{peak ? `${formatThaiDate(peak.reportDate, true)} (${dailyTotal(peak).toLocaleString("th-TH")} ราย)` : "—"}</strong>
+        </p>
+      </section>
+      <div className="grid gap-5 lg:grid-cols-2">
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-display text-base font-bold text-slate-900">
+            โรคที่พบบ่อย
+          </h2>
+          <ol className="mt-4 space-y-3">
+            {diseases.map((item, index) => (
+              <li
+                key={item.name}
+                className="flex items-center justify-between gap-4 border-b border-slate-100 pb-2 text-sm"
+              >
+                <span>
+                  <span className="mr-2 font-mono text-xs text-slate-500">
+                    {index + 1}
+                  </span>
+                  {item.name}
+                </span>
+                <span className="text-right font-mono font-semibold tabular-nums text-slate-700">
+                  {item.count}
+                  <span className="ml-2 text-xs font-normal text-slate-500">(ช {item.male} · ญ {item.female})</span>
+                </span>
+              </li>
+            ))}
+            {diseases.length === 0 && (
+              <li className="text-sm text-slate-500">
+                ยังไม่มีข้อมูลโรคในช่วงนี้
+              </li>
+            )}
+          </ol>
+        </section>
+        <section className="rounded-xl border border-slate-200 bg-white p-5">
+          <h2 className="font-display text-base font-bold text-slate-900">
+            หัตถการที่พบบ่อย
+          </h2>
+          <ol className="mt-4 space-y-3">
+            {procedures.map((item, index) => (
+              <li
+                key={item.name}
+                className="flex items-center justify-between gap-4 border-b border-slate-100 pb-2 text-sm"
+              >
+                <span>
+                  <span className="mr-2 font-mono text-xs text-slate-500">
+                    {index + 1}
+                  </span>
+                  {item.name}
+                </span>
+                <span className="text-right font-mono font-semibold tabular-nums text-slate-700">
+                  {item.count}
+                  <span className="ml-2 text-xs font-normal text-slate-500">(ช {item.male} · ญ {item.female})</span>
+                </span>
+              </li>
+            ))}
+            {procedures.length === 0 && (
+              <li className="text-sm text-slate-500">
+                ยังไม่มีข้อมูลหัตถการในช่วงนี้
+              </li>
+            )}
+          </ol>
+        </section>
       </div>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="border-b border-slate-100 pb-4">
+          <h2 className="font-display text-base font-bold text-slate-900">บันทึกหมายเหตุประจำวัน</h2>
+          <p className="mt-1 text-xs text-slate-500">เหตุการณ์สำคัญและการส่งต่อจากเจ้าหน้าที่ในช่วงที่เลือก</p>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {[...periodReports].reverse().slice(0, 5).map((report) => (
+            <div key={report.reportDate} className="flex flex-col justify-between gap-2 py-3 text-sm sm:flex-row sm:items-center">
+              <div>
+                <p className="text-xs text-slate-500">{formatThaiDate(report.reportDate, true)} · รวม {dailyTotal(report).toLocaleString("th-TH")} ราย</p>
+                <p className="mt-1 whitespace-pre-wrap text-slate-700">{report.reporterNote || "ไม่มีหมายเหตุเพิ่มเติม"}</p>
+              </div>
+              <button type="button" onClick={() => onEditDate(report.reportDate)} className="self-start text-xs font-semibold text-teal-700 hover:underline sm:self-center">แก้ไขข้อมูลย้อนหลัง</button>
+            </div>
+          ))}
+          {periodReports.length === 0 && <p className="py-4 text-sm text-slate-500">ยังไม่มีรายงานในช่วงนี้</p>}
+        </div>
+      </section>
     </div>
   );
-};
+}

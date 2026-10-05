@@ -1,8 +1,0 @@
-{
-  "name": "Ongkharak Hospital Temporary Unit Dashboard",
-  "description": "ระบบสารสนเทศและ Dashboard รายงานสถิติผู้รับบริการประจำวัน หน่วยบริการชั่วคราว โรงพยาบาลองครักษ์ จังหวัดนครนายก พร้อมระบบจัดการ Google Apps Script",
-  "requestFramePermissions": [],
-  "majorCapabilities": [
-    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
-  ]
-}
