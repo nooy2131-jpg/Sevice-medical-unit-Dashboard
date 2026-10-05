@@ -56,12 +56,11 @@ The bootstrap values should identify the first Admin specified in
 `BETTER_AUTH_URL` and `BETTER_AUTH_TRUSTED_ORIGINS` are set by the production
 Kubernetes overlay.
 
-Replace `REPLACE_WITH_INFISICAL_PROJECT_SLUG` in the application source in both
-`base/infisical-secret.yaml` and `overlays/prod-secrets/infisical-secret.yaml`
-with the project's slug. Keep both copies aligned: the stage-1 Kustomize overlay
-must not load resources outside its directory. The Infisical operator requires
-the scope under `authentication.universalAuth.secretsScope`. Commit this
-non-secret slug before selecting the immutable source SHA for stage 1.
+The project slug `ongkharak-medical-unit-i-q20` is set in both
+`base/infisical-secret.yaml` and `overlays/prod-secrets/infisical-secret.yaml`.
+Keep both copies aligned: the stage-1 Kustomize overlay must not load resources
+outside its directory. The Infisical operator requires the scope under
+`authentication.universalAuth.secretsScope`.
 
 Add `https://okr-unit.pskwr.com/api/auth/callback/google` to the Google OAuth
 client's authorized redirect URIs. Ensure the sender is verified in Resend.
