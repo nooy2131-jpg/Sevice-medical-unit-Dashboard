@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { Download, Eye, Search, Trash2, Upload, X } from "lucide-react";
+import { Dialog } from "./Dialog";
 import {
   DailyReport,
   formatBangkokTimestamp,
@@ -9,6 +10,7 @@ import {
   normalizeTopItems,
 } from "../types/report";
 import { parseReportsImport } from "../lib/csv";
+import { isCalendarDate, todayBangkok } from "../lib/dates";
 import { validateReport } from "../lib/report-validation";
 
 export interface ImportPreview {
@@ -132,6 +134,14 @@ export function RecordsTableView({
     "skip",
   );
   const [importError, setImportError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [importBusy, setImportBusy] = useState(false);
+  const [dateToOpen, setDateToOpen] = useState(todayBangkok());
+  const [dateError, setDateError] = useState<string | null>(null);
+  const [pasteImportOpen, setPasteImportOpen] = useState(false);
+  const [pasteImportText, setPasteImportText] = useState("");
+  const [pasteImportError, setPasteImportError] = useState<string | null>(null);
   const filtered = useMemo(
     () =>
       reports
@@ -166,6 +176,24 @@ export function RecordsTableView({
     setImportError(null);
     setImportPreview(value.trim() ? parsePreview(value, reports) : null);
   };
+  const openSelectedDate = () => {
+    if (!isCalendarDate(dateToOpen)) {
+      setDateError("กรุณาเลือกวันที่ตามปฏิทินที่ถูกต้อง");
+      return;
+    }
+    setDateError(null);
+    onEditDate(dateToOpen);
+  };
+  const submitPasteImport = () => {
+    if (!pasteImportText.trim()) {
+      setPasteImportError("กรุณาวางข้อมูลที่ต้องการนำเข้า");
+      return;
+    }
+    setPasteImportError(null);
+    openImport(pasteImportText);
+    setPasteImportText("");
+    setPasteImportOpen(false);
+  };
   const submitImport = async () => {
     if (!importPreview || !onImportRows) return;
     if (!importPreview.rows.length) {
@@ -191,6 +219,7 @@ export function RecordsTableView({
           : [[row.reportDate, current.version]];
       }),
     );
+    setImportBusy(true);
     try {
       await onImportRows(importPreview.rows, duplicateMode, expectedVersions);
     } catch (reason) {
@@ -198,8 +227,26 @@ export function RecordsTableView({
         reason instanceof Error ? reason.message : "นำเข้ารายงานไม่สำเร็จ",
       );
       return;
+    } finally {
+      setImportBusy(false);
     }
     setImportPreview(null);
+  };
+  const submitDelete = async () => {
+    if (!deleteDate) return;
+    const date = deleteDate;
+    setDeleteBusy(true);
+    setDeleteError(null);
+    try {
+      await onDeleteDate(date);
+      setDeleteDate(null);
+    } catch (reason) {
+      setDeleteError(
+        reason instanceof Error ? reason.message : "ลบรายงานไม่สำเร็จ",
+      );
+    } finally {
+      setDeleteBusy(false);
+    }
   };
   return (
     <div className="mx-auto max-w-7xl space-y-5">
@@ -213,7 +260,7 @@ export function RecordsTableView({
             ตารางรายงานย้อนหลัง
           </h1>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <div className="flex flex-wrap items-end gap-2">
           <label className="relative">
             <span className="sr-only">ค้นหารายงาน</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -236,6 +283,33 @@ export function RecordsTableView({
               <option value="total-desc">ยอดรวมมากสุดก่อน</option>
             </select>
           </label>
+          <div className="flex items-end gap-2">
+            <label className="block">
+              <span className="sr-only">วันที่รายงานที่ต้องการเปิด</span>
+              <input
+                type="date"
+                value={dateToOpen}
+                onChange={(event) => {
+                  setDateToOpen(event.target.value);
+                  setDateError(null);
+                }}
+                aria-describedby={dateError ? "records-date-error" : undefined}
+                className="control-input font-mono text-sm tabular-nums"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={openSelectedDate}
+              className="control-button"
+            >
+              เปิดรายงาน
+            </button>
+          </div>
+          {dateError && (
+            <p id="records-date-error" className="basis-full text-sm text-rose-700" role="alert">
+              {dateError}
+            </p>
+          )}
           <button
             type="button"
             onClick={() => void onExportCsv()}
@@ -245,37 +319,53 @@ export function RecordsTableView({
             ส่งออก CSV
           </button>
           {isAdmin && onImportRows && (
-            <label className="control-button cursor-pointer">
-              <Upload className="h-4 w-4" />
-              นำเข้า CSV
-              <input
-                type="file"
-                accept=".csv,text/csv"
-                className="sr-only"
-                onChange={(event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
-                  void file.text().then(openImport);
-                  event.currentTarget.value = "";
+            <>
+              <label className="control-button cursor-pointer">
+                <Upload className="h-4 w-4" />
+                นำเข้าไฟล์
+                <input
+                  type="file"
+                  accept=".csv,text/csv,.tsv,text/tab-separated-values,.json,application/json"
+                  className="sr-only"
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
+                    if (!file) return;
+                    void file.text().then(openImport);
+                    event.currentTarget.value = "";
+                  }}
+                />
+              </label>
+              <button
+                type="button"
+                onClick={() => {
+                  setPasteImportError(null);
+                  setPasteImportOpen(true);
                 }}
-              />
-            </label>
+                className="control-button"
+              >
+                วาง CSV / JSON / TSV
+              </button>
+            </>
           )}
         </div>
       </div>
       <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[850px] text-left text-sm">
+          <table className="w-full min-w-[1200px] text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-semibold">วันที่รายงาน</th>
                 <th className="px-4 py-3 text-right font-semibold">
-                  ผู้รับบริการ ชาย
+                  ผู้รับบริการรวม (ช/ญ)
                 </th>
                 <th className="px-4 py-3 text-right font-semibold">
-                  ผู้รับบริการ หญิง
+                  แพทย์แผนไทย (ช/ญ)
                 </th>
-                <th className="px-4 py-3 text-right font-semibold">รวม</th>
+                <th className="px-4 py-3 text-right font-semibold">ตรวจโรคทั่วไป</th>
+                <th className="px-4 py-3 text-right font-semibold">หัตถการ</th>
+                <th className="px-4 py-3 text-right font-semibold">รับยาเดิม</th>
+                <th className="px-4 py-3 text-right font-semibold">ใบส่งตัว</th>
+                <th className="px-4 py-3 text-right font-semibold">Admit / Refer</th>
                 <th className="px-4 py-3 font-semibold">โรคอันดับ 1</th>
                 <th className="px-4 py-3 font-semibold">อัปเดตล่าสุด</th>
                 <th className="px-4 py-3 text-right font-semibold">จัดการ</th>
@@ -285,14 +375,22 @@ export function RecordsTableView({
               {filtered.length === 0 ? (
                 <tr>
                   <td
-                    colSpan={7}
+                    colSpan={11}
                     className="px-4 py-12 text-center text-sm text-slate-500"
                   >
                     ยังไม่มีข้อมูลรายงาน
                   </td>
                 </tr>
               ) : (
-                filtered.map((report) => (
+                filtered.map((report) => {
+                  const topDisease = normalizeTopItems(report.topDiseases)[0];
+                  const serviceCell = (male: number, female: number) => (
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">
+                      <span className="font-semibold text-slate-900">{male + female}</span>
+                      <span className="ml-1 text-xs text-slate-500">({male}/{female})</span>
+                    </td>
+                  );
+                  return (
                   <tr key={report.reportDate} className="hover:bg-slate-50">
                     <td className="px-4 py-3">
                       <span className="font-medium text-slate-900">
@@ -302,17 +400,19 @@ export function RecordsTableView({
                         {report.reportDate}
                       </span>
                     </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums">
-                      {report.totalMale}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono tabular-nums">
-                      {report.totalFemale}
-                    </td>
-                    <td className="px-4 py-3 text-right font-mono font-semibold tabular-nums">
-                      {report.totalMale + report.totalFemale}
+                    {serviceCell(report.totalMale, report.totalFemale)}
+                    {serviceCell(report.thaiMale, report.thaiFemale)}
+                    {serviceCell(report.genMale, report.genFemale)}
+                    {serviceCell(report.procMale, report.procFemale)}
+                    {serviceCell(report.refillMale, report.refillFemale)}
+                    {serviceCell(report.referDocMale, report.referDocFemale)}
+                    <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">
+                      <span className="font-semibold text-slate-900">Admit {report.admitMale + report.admitFemale}</span>
+                      <span className="mx-1 text-slate-400">·</span>
+                      <span className="font-semibold text-slate-900">Refer {report.referOutMale + report.referOutFemale}</span>
                     </td>
                     <td className="max-w-56 truncate px-4 py-3">
-                      {normalizeTopItems(report.topDiseases)[0]?.name ?? "—"}
+                      {topDisease ? `${topDisease.name} (${topDisease.count})` : "—"}
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-500">
                       <span className="block">
@@ -352,20 +452,15 @@ export function RecordsTableView({
                       </div>
                     </td>
                   </tr>
-                ))
+                  );
+                })
               )}
             </tbody>
           </table>
         </div>
       </div>
       {inspect && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="inspect-title"
-        >
-          <div className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white p-5 shadow-xl">
+        <Dialog open={Boolean(inspect)} labelledBy="inspect-title" onClose={() => setInspectDate(null)} className="max-w-2xl">
             <div className="flex items-start justify-between">
               <div>
                 <h2
@@ -385,6 +480,7 @@ export function RecordsTableView({
                 onClick={() => setInspectDate(null)}
                 className="control-button px-2"
                 aria-label="ปิด"
+                data-dialog-initial-focus
               >
                 <X className="h-4 w-4" />
               </button>
@@ -441,7 +537,14 @@ export function RecordsTableView({
                       <span>
                         {index + 1}. {item.name}
                       </span>
-                      <span className="font-mono">{item.count}</span>
+                      <span className="text-right font-mono">
+                        <span className="block">{item.count}</span>
+                        {(item.male !== undefined || item.female !== undefined) && (
+                          <span className="block text-xs text-slate-500">
+                            ช/ญ {item.male ?? 0}/{item.female ?? 0}
+                          </span>
+                        )}
+                      </span>
                     </li>
                   ))}
                 </ol>
@@ -460,7 +563,14 @@ export function RecordsTableView({
                         <span>
                           {index + 1}. {item.name}
                         </span>
-                        <span className="font-mono">{item.count}</span>
+                        <span className="text-right font-mono">
+                          <span className="block">{item.count}</span>
+                          {(item.male !== undefined || item.female !== undefined) && (
+                            <span className="block text-xs text-slate-500">
+                              ช/ญ {item.male ?? 0}/{item.female ?? 0}
+                            </span>
+                          )}
+                        </span>
                       </li>
                     ),
                   )}
@@ -472,17 +582,30 @@ export function RecordsTableView({
                 <strong>หมายเหตุภาพรวม:</strong> {inspect.reporterNote}
               </p>
             )}
-          </div>
-        </div>
+            <div className="mt-5 flex justify-end gap-2 border-t border-slate-100 pt-4">
+              <button
+                type="button"
+                onClick={() => {
+                  const date = inspect.reportDate;
+                  setInspectDate(null);
+                  onEditDate(date);
+                }}
+                className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800"
+              >
+                แก้ไขข้อมูลวันนี้
+              </button>
+              <button
+                type="button"
+                onClick={() => setInspectDate(null)}
+                className="control-button"
+              >
+                ปิดหน้าต่าง
+              </button>
+            </div>
+        </Dialog>
       )}
       {deleteDate && isAdmin && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="delete-title"
-        >
-          <div className="w-full max-w-sm rounded-xl bg-white p-5 shadow-xl">
+        <Dialog open labelledBy="delete-title" onClose={() => !deleteBusy && setDeleteDate(null)} className="max-w-sm">
             <h2
               id="delete-title"
               className="font-display text-lg font-bold text-slate-900"
@@ -497,32 +620,81 @@ export function RecordsTableView({
                 type="button"
                 onClick={() => setDeleteDate(null)}
                 className="control-button"
+                disabled={deleteBusy}
+                data-dialog-initial-focus
               >
                 ยกเลิก
               </button>
               <button
                 type="button"
-                onClick={() => {
-                  const date = deleteDate;
-                  setDeleteDate(null);
-                  void onDeleteDate(date);
-                }}
-                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700"
+                onClick={() => void submitDelete()}
+                disabled={deleteBusy}
+                className="rounded-lg bg-rose-600 px-4 py-2 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-wait disabled:opacity-60"
               >
-                ยืนยันลบ
+                {deleteBusy ? "กำลังลบ…" : "ยืนยันลบ"}
               </button>
             </div>
+            {deleteError && <p className="mt-3 text-sm text-rose-700" role="alert">{deleteError}</p>}
+        </Dialog>
+      )}
+      {pasteImportOpen && isAdmin && onImportRows && (
+        <Dialog
+          open
+          labelledBy="paste-import-title"
+          onClose={() => setPasteImportOpen(false)}
+          className="max-w-xl"
+        >
+          <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+            <div>
+              <h2 id="paste-import-title" className="font-display text-lg font-bold text-slate-900">
+                วางข้อมูลนำเข้า
+              </h2>
+              <p className="mt-1 text-sm text-slate-600">
+                รองรับ CSV, JSON และ TSV จากไฟล์รายงานที่ส่งออก
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setPasteImportOpen(false)}
+              className="control-button px-2"
+              aria-label="ปิด"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-        </div>
+          {pasteImportError && (
+            <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800" role="alert">
+              {pasteImportError}
+            </p>
+          )}
+          <label className="mt-4 block text-sm font-medium text-slate-700" htmlFor="paste-import-text">
+            ข้อมูลรายงาน
+            <textarea
+              id="paste-import-text"
+              value={pasteImportText}
+              onChange={(event) => setPasteImportText(event.target.value)}
+              rows={9}
+              className="control-input mt-2 min-h-48 w-full resize-y font-mono text-xs"
+              placeholder="วาง CSV, JSON หรือ TSV ที่ต้องการนำเข้า…"
+              data-dialog-initial-focus
+            />
+          </label>
+          <div className="mt-4 flex justify-end gap-2">
+            <button type="button" onClick={() => setPasteImportOpen(false)} className="control-button">
+              ยกเลิก
+            </button>
+            <button
+              type="button"
+              onClick={submitPasteImport}
+              className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800"
+            >
+              ตรวจสอบข้อมูล
+            </button>
+          </div>
+        </Dialog>
       )}
       {importPreview && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/30 p-4"
-          role="dialog"
-          aria-modal="true"
-          aria-labelledby="import-title"
-        >
-          <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
+        <Dialog open labelledBy="import-title" onClose={() => !importBusy && setImportPreview(null)} className="max-w-lg">
             <div className="flex items-start justify-between">
               <div>
                 <h2
@@ -541,6 +713,8 @@ export function RecordsTableView({
                 onClick={() => setImportPreview(null)}
                 className="control-button px-2"
                 aria-label="ปิด"
+                disabled={importBusy}
+                data-dialog-initial-focus
               >
                 <X className="h-4 w-4" />
               </button>
@@ -579,19 +753,20 @@ export function RecordsTableView({
                 type="button"
                 onClick={() => setImportPreview(null)}
                 className="control-button"
+                disabled={importBusy}
               >
                 ยกเลิก
               </button>
               <button
                 type="button"
                 onClick={() => void submitImport()}
-                className="rounded-lg bg-teal-600 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-700"
+                disabled={importBusy}
+                className="rounded-lg bg-teal-700 px-4 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
               >
-                ยืนยันนำเข้า
+                {importBusy ? "กำลังนำเข้า…" : "ยืนยันนำเข้า"}
               </button>
             </div>
-          </div>
-        </div>
+        </Dialog>
       )}
     </div>
   );

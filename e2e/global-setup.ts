@@ -18,6 +18,7 @@ export default async function globalSetup(): Promise<void> {
   const adminId = randomUUID();
   const memberId = randomUUID();
   const passwordHash = await hashPassword(password);
+  const now = new Date();
   try {
     await pool.query('BEGIN');
     const users = await pool.query<{ id: string }>(
@@ -32,12 +33,12 @@ export default async function globalSetup(): Promise<void> {
       await pool.query('DELETE FROM "User" WHERE "id" = ANY($1::text[])', [ids]);
     }
     await pool.query(
-      'INSERT INTO "User" ("id", "name", "email", "emailVerified", "role", "active") VALUES ($1, $2, $3, true, \'admin\', true), ($4, $5, $6, true, \'member\', true)',
-      [adminId, 'E2E Admin', adminEmail, memberId, 'E2E Member', memberEmail],
+      'INSERT INTO "User" ("id", "name", "email", "emailVerified", "role", "active", "updatedAt") VALUES ($1, $2, $3, true, \'admin\', true, $7), ($4, $5, $6, true, \'member\', true, $7)',
+      [adminId, 'E2E Admin', adminEmail, memberId, 'E2E Member', memberEmail, now],
     );
     await pool.query(
-      'INSERT INTO "Account" ("id", "accountId", "providerId", "userId", "password") VALUES ($1, $2, \'credential\', $2, $4), ($3, $5, \'credential\', $5, $4)',
-      [randomUUID(), adminId, randomUUID(), passwordHash, memberId],
+      'INSERT INTO "Account" ("id", "accountId", "providerId", "userId", "password", "updatedAt") VALUES ($1, $2, \'credential\', $2, $4, $6), ($3, $5, \'credential\', $5, $4, $6)',
+      [randomUUID(), adminId, randomUUID(), passwordHash, memberId, now],
     );
     await pool.query('COMMIT');
   } catch (error) {

@@ -1,5 +1,4 @@
 import { ReportsDashboardClient } from "@/src/components/ReportsClient";
-import { requireUser } from "@/src/lib/authorization";
 
 function todayBangkok(): string {
   const parts = new Intl.DateTimeFormat("en-CA", {
@@ -15,6 +14,5 @@ function todayBangkok(): string {
 }
 
 export default async function DashboardPage() {
-  await requireUser();
   return <ReportsDashboardClient initialDate={todayBangkok()} />;
 }

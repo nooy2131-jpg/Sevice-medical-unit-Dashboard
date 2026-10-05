@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { authClient } from "@/src/lib/auth-client";
+import { todayBangkok } from "@/src/lib/dates";
 
 type User = {
   name?: string | null;
@@ -16,9 +17,14 @@ export function ProtectedNav({ user }: { user: User }) {
   const links = [
     { href: "/dashboard", label: "ภาพรวมสถิติ" },
     { href: "/records", label: "รายงานย้อนหลัง" },
+    { href: `/reports/${todayBangkok()}`, label: "บันทึกวันนี้" },
   ];
   if (user.role === "admin")
     links.push({ href: "/settings", label: "ตั้งค่า" });
+  const isLinkActive = (href: string) =>
+    href.startsWith("/reports/")
+      ? pathname.startsWith("/reports/")
+      : pathname.startsWith(href);
   return (
     <div className="flex items-center gap-3">
       <nav
@@ -30,7 +36,7 @@ export function ProtectedNav({ user }: { user: User }) {
             key={link.href}
             href={link.href}
             className={
-              pathname.startsWith(link.href)
+              isLinkActive(link.href)
                 ? "text-teal-700 underline decoration-2 underline-offset-8"
                 : "hover:text-slate-950"
             }
@@ -48,7 +54,7 @@ export function ProtectedNav({ user }: { user: User }) {
             key={link.href}
             href={link.href}
             className={
-              pathname.startsWith(link.href)
+              isLinkActive(link.href)
                 ? "text-teal-700"
                 : "hover:text-slate-950"
             }

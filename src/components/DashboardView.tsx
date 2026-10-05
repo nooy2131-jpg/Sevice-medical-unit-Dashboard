@@ -12,9 +12,14 @@ import {
 import {
   DailyReport,
   formatThaiDate,
-  normalizeTopItems,
 } from "../types/report";
-import { shiftDate } from "../lib/dates";
+import { isCalendarDate, shiftDate } from "../lib/dates";
+import {
+  aggregateRankedItems,
+  dailyTotal,
+  peakReport,
+  recordedDayAverage,
+} from "../lib/dashboard-aggregation";
 
 export interface DashboardViewProps {
   reports: DailyReport[];
@@ -73,21 +78,17 @@ export function DashboardView({
   const totalMale = metric(periodReports, "totalMale");
   const totalFemale = metric(periodReports, "totalFemale");
   const total = totalMale + totalFemale;
-  const averageDenominator = rangeMode === "7D" ? 7 : 0;
+  const averageDenominator = periodReports.length;
   const missing =
     rangeMode === "7D" ? dates.filter((date) => !byDate.has(date)) : [];
-  const diseases = new Map<string, number>();
-  const procedures = new Map<string, number>();
-  periodReports.forEach((report) => {
-    normalizeTopItems(report.topDiseases).forEach((item) =>
-      diseases.set(item.name, (diseases.get(item.name) ?? 0) + item.count),
-    );
-    normalizeTopItems(report.topProcedures).forEach((item) =>
-      procedures.set(item.name, (procedures.get(item.name) ?? 0) + item.count),
-    );
-  });
-  const top = (values: Map<string, number>) =>
-    [...values.entries()].sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const diseases = aggregateRankedItems(periodReports, "topDiseases");
+  const procedures = aggregateRankedItems(periodReports, "topProcedures");
+  const trendDates = rangeMode === "7D" ? dates : visibleDates;
+  const maxTrendTotal = Math.max(1, ...trendDates.map((date) => {
+    const report = byDate.get(date);
+    return report ? dailyTotal(report) : 0;
+  }));
+  const peak = peakReport(periodReports);
   const serviceRows = [
     [
       "ตรวจโรคทั่วไป",
@@ -153,7 +154,9 @@ export function DashboardView({
             id="period-end"
             type="date"
             value={periodEndDate}
-            onChange={(event) => onPeriodChange(event.target.value)}
+            onChange={(event) => {
+              if (isCalendarDate(event.target.value)) onPeriodChange(event.target.value);
+            }}
             className="control-input font-mono tabular-nums"
           />
           <button
@@ -175,8 +178,8 @@ export function DashboardView({
           </button>
           <button
             type="button"
-            onClick={() => onNewReport(periodEndDate)}
-            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-teal-600 px-4 text-sm font-semibold text-white hover:bg-teal-700"
+            onClick={() => onNewReport()}
+            className="inline-flex min-h-10 items-center gap-2 rounded-lg bg-teal-700 px-4 text-sm font-semibold text-white hover:bg-teal-800"
           >
             <FilePlus2 className="h-4 w-4" />
             บันทึกวันนี้
@@ -212,12 +215,20 @@ export function DashboardView({
           </button>
         ))}
         {rangeMode === "SINGLE" && (
-          <input
-            type="date"
-            value={singleDate}
-            onChange={(event) => setSingleDate(event.target.value)}
-            className="control-input font-mono text-xs"
-          />
+          <>
+            <label htmlFor="single-report-date" className="sr-only">
+              วันที่เดียวที่ต้องการดู
+            </label>
+            <input
+              id="single-report-date"
+              type="date"
+              value={singleDate}
+              onChange={(event) => {
+                if (isCalendarDate(event.target.value)) setSingleDate(event.target.value);
+              }}
+              className="control-input font-mono text-xs"
+            />
+          </>
         )}
       </div>
       <div className="flex items-center gap-2 text-sm text-slate-600">
@@ -271,8 +282,8 @@ export function DashboardView({
           </p>
           <p className="mt-1 text-xs text-slate-500">
             {averageDenominator
-              ? `เฉลี่ย ${Math.round(total / averageDenominator).toLocaleString("th-TH")} รายต่อ 7 วันปฏิทิน`
-              : "ค่าเฉลี่ยแสดงเฉพาะช่วง 7 วันปฏิทิน"}
+              ? `เฉลี่ย ${recordedDayAverage(periodReports).toLocaleString("th-TH")} รายต่อวันที่บันทึก`
+              : "ยังไม่มีวันที่บันทึกในช่วงนี้"}
           </p>
         </article>
         <article className="rounded-xl border border-slate-200 bg-white p-5">
@@ -402,29 +413,62 @@ export function DashboardView({
           </table>
         </div>
       </section>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="flex flex-wrap items-start justify-between gap-3 border-b border-slate-100 pb-4">
+          <div>
+            <h2 className="font-display text-base font-bold text-slate-900">แนวโน้มผู้รับบริการรายวัน</h2>
+            <p className="mt-1 text-xs text-slate-500">แยกชายและหญิงในช่วงที่เลือก · คลิกวันที่เพื่อแก้ไข</p>
+          </div>
+          <div className="flex items-center gap-3 text-xs text-slate-600">
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-sky-600" />ชาย</span>
+            <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-teal-500" />หญิง</span>
+          </div>
+        </div>
+        <div className="mt-5 flex h-56 items-end gap-2 overflow-x-auto border-b border-slate-200 px-1 pb-2 sm:gap-3">
+          {trendDates.map((date) => {
+            const report = byDate.get(date);
+            const totalForDay = report ? dailyTotal(report) : 0;
+            const height = totalForDay ? Math.max(8, Math.round((totalForDay / maxTrendTotal) * 100)) : 2;
+            const malePercent = totalForDay ? Math.round(((report?.totalMale ?? 0) / totalForDay) * 100) : 0;
+            return (
+              <button type="button" key={date} onClick={() => report ? onEditDate(date) : onNewReport(date)} aria-label={report ? `${formatThaiDate(date, true)} ชาย ${report.totalMale} ราย หญิง ${report.totalFemale} ราย รวม ${totalForDay} ราย` : `${formatThaiDate(date, true)} ยังไม่มีรายงาน`} className="group flex h-full min-w-10 flex-1 flex-col items-center justify-end focus:outline-none focus:ring-2 focus:ring-teal-700" title={report ? `${formatThaiDate(date, true)} รวม ${totalForDay} ราย` : `${formatThaiDate(date, true)} ยังไม่มีรายงาน`}>
+                <span className="mb-1 font-mono text-[11px] tabular-nums text-slate-700">{report ? totalForDay : "—"}</span>
+                <span className={`flex w-full max-w-12 flex-col justify-end overflow-hidden rounded-t-md ${report ? "bg-teal-500" : "bg-slate-200"}`} style={{ height: `${height}%` }}>
+                  {report && <><span className="w-full bg-teal-500" style={{ height: `${100 - malePercent}%` }} /><span className="w-full bg-sky-600" style={{ height: `${malePercent}%` }} /></>}
+                </span>
+                <span className="mt-2 truncate text-[11px] tabular-nums text-slate-500">{date.slice(5)}</span>
+              </button>
+            );
+          })}
+        </div>
+        <p className="mt-4 text-xs text-slate-600">
+          วันที่มีผู้รับบริการสูงสุด: <strong className="text-slate-900">{peak ? `${formatThaiDate(peak.reportDate, true)} (${dailyTotal(peak).toLocaleString("th-TH")} ราย)` : "—"}</strong>
+        </p>
+      </section>
       <div className="grid gap-5 lg:grid-cols-2">
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-display text-base font-bold text-slate-900">
             โรคที่พบบ่อย
           </h2>
           <ol className="mt-4 space-y-3">
-            {top(diseases).map(([name, count], index) => (
+            {diseases.map((item, index) => (
               <li
-                key={name}
+                key={item.name}
                 className="flex items-center justify-between gap-4 border-b border-slate-100 pb-2 text-sm"
               >
                 <span>
                   <span className="mr-2 font-mono text-xs text-slate-500">
                     {index + 1}
                   </span>
-                  {name}
+                  {item.name}
                 </span>
-                <span className="font-mono font-semibold tabular-nums text-slate-700">
-                  {count}
+                <span className="text-right font-mono font-semibold tabular-nums text-slate-700">
+                  {item.count}
+                  <span className="ml-2 text-xs font-normal text-slate-500">(ช {item.male} · ญ {item.female})</span>
                 </span>
               </li>
             ))}
-            {diseases.size === 0 && (
+            {diseases.length === 0 && (
               <li className="text-sm text-slate-500">
                 ยังไม่มีข้อมูลโรคในช่วงนี้
               </li>
@@ -436,23 +480,24 @@ export function DashboardView({
             หัตถการที่พบบ่อย
           </h2>
           <ol className="mt-4 space-y-3">
-            {top(procedures).map(([name, count], index) => (
+            {procedures.map((item, index) => (
               <li
-                key={name}
+                key={item.name}
                 className="flex items-center justify-between gap-4 border-b border-slate-100 pb-2 text-sm"
               >
                 <span>
                   <span className="mr-2 font-mono text-xs text-slate-500">
                     {index + 1}
                   </span>
-                  {name}
+                  {item.name}
                 </span>
-                <span className="font-mono font-semibold tabular-nums text-slate-700">
-                  {count}
+                <span className="text-right font-mono font-semibold tabular-nums text-slate-700">
+                  {item.count}
+                  <span className="ml-2 text-xs font-normal text-slate-500">(ช {item.male} · ญ {item.female})</span>
                 </span>
               </li>
             ))}
-            {procedures.size === 0 && (
+            {procedures.length === 0 && (
               <li className="text-sm text-slate-500">
                 ยังไม่มีข้อมูลหัตถการในช่วงนี้
               </li>
@@ -460,6 +505,24 @@ export function DashboardView({
           </ol>
         </section>
       </div>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="border-b border-slate-100 pb-4">
+          <h2 className="font-display text-base font-bold text-slate-900">บันทึกหมายเหตุประจำวัน</h2>
+          <p className="mt-1 text-xs text-slate-500">เหตุการณ์สำคัญและการส่งต่อจากเจ้าหน้าที่ในช่วงที่เลือก</p>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {[...periodReports].reverse().slice(0, 5).map((report) => (
+            <div key={report.reportDate} className="flex flex-col justify-between gap-2 py-3 text-sm sm:flex-row sm:items-center">
+              <div>
+                <p className="text-xs text-slate-500">{formatThaiDate(report.reportDate, true)} · รวม {dailyTotal(report).toLocaleString("th-TH")} ราย</p>
+                <p className="mt-1 whitespace-pre-wrap text-slate-700">{report.reporterNote || "ไม่มีหมายเหตุเพิ่มเติม"}</p>
+              </div>
+              <button type="button" onClick={() => onEditDate(report.reportDate)} className="self-start text-xs font-semibold text-teal-700 hover:underline sm:self-center">แก้ไขข้อมูลย้อนหลัง</button>
+            </div>
+          ))}
+          {periodReports.length === 0 && <p className="py-4 text-sm text-slate-500">ยังไม่มีรายงานในช่วงนี้</p>}
+        </div>
+      </section>
     </div>
   );
 }

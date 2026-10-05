@@ -31,11 +31,16 @@ function InviteForm() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const response = await fetch('/api/invitations/accept', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, name, password }) });
-    const data = (await response.json()) as { error?: { message?: string } };
-    if (!response.ok) setError(data.error?.message ?? 'ไม่สามารถสร้างบัญชีได้');
-    else setDone(true);
-    setBusy(false);
+    try {
+      const response = await fetch('/api/invitations/accept', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ token, name, password }) });
+      const data = (await response.json()) as { error?: { message?: string } };
+      if (!response.ok) setError(data.error?.message ?? 'ไม่สามารถสร้างบัญชีได้');
+      else setDone(true);
+    } catch {
+      setError('ไม่สามารถสร้างบัญชีได้ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่');
+    } finally {
+      setBusy(false);
+    }
   }
 
   return (

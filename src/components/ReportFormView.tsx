@@ -9,7 +9,7 @@ import {
   Trash2,
 } from "lucide-react";
 import { DISEASE_PRESETS, PROCEDURE_PRESETS } from "../data/seedReports";
-import { shiftDate } from "../lib/dates";
+import { isCalendarDate, shiftDate } from "../lib/dates";
 import {
   DailyReport,
   ReportSaveState,
@@ -48,6 +48,7 @@ export interface ReportFormViewProps {
   publishErrorMessage?: string | null;
   isPublishing?: boolean;
   conflictMessage?: string | null;
+  disabled?: boolean;
   onDateChange?: (date: string) => void;
   onSave: (report: DailyReport) => Promise<void>;
   onDelete?: (date: string) => Promise<void>;
@@ -207,6 +208,7 @@ export function ReportFormView({
   publishErrorMessage,
   isPublishing = false,
   conflictMessage,
+  disabled = false,
   onDateChange,
   onSave,
   onDelete,
@@ -228,6 +230,8 @@ export function ReportFormView({
   );
   const [note, setNote] = useState(source?.reporterNote ?? "");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
   const draftGeneration = useRef(0);
   const hydratedKey = useRef<string | null>(null);
 
@@ -308,22 +312,36 @@ export function ReportFormView({
     emitDraft(numbersNext, diseasesNext, proceduresNext, "");
   };
   const moveDateByDays = async (delta: number) => {
-    await onDraftFlush?.();
-    onDateChange?.(shiftDate(reportDate, delta));
+    try {
+      await onDraftFlush?.();
+      onDateChange?.(shiftDate(reportDate, delta));
+    } catch {
+      // The parent keeps the draft and exposes the save error in its status.
+    }
   };
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    await onDraftFlush?.();
-    await onSave(
-      makeReport(
-        reportDate,
-        numbers,
-        diseases,
-        procedures,
-        note,
-        publishedReport?.version,
-      ),
-    );
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
+    try {
+      await onDraftFlush?.();
+      await onSave(
+        makeReport(
+          reportDate,
+          numbers,
+          diseases,
+          procedures,
+          note,
+          publishedReport?.version,
+        ),
+      );
+    } catch {
+      // The parent owns the visible error state and retains the local draft.
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
   };
   const statusTone =
     saveState === "error" || saveState === "conflict"
@@ -333,7 +351,8 @@ export function ReportFormView({
         : "text-slate-600 bg-slate-50 border-slate-200";
 
   return (
-    <form onSubmit={handleSubmit} className="mx-auto max-w-6xl space-y-5 pb-10">
+    <form onSubmit={handleSubmit} aria-busy={isPublishing || submitting} className="mx-auto max-w-6xl space-y-5 pb-10">
+      <fieldset disabled={disabled || isPublishing || submitting} className="contents">
       <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm text-slate-500">
@@ -411,8 +430,14 @@ export function ReportFormView({
               type="date"
               value={reportDate}
               onChange={async (event) => {
-                await onDraftFlush?.();
-                onDateChange?.(event.target.value);
+                const nextDate = event.target.value;
+                if (!isCalendarDate(nextDate)) return;
+                try {
+                  await onDraftFlush?.();
+                  onDateChange?.(nextDate);
+                } catch {
+                  // The parent keeps the draft and exposes the save error in its status.
+                }
               }}
               className="control-input font-mono tabular-nums"
               required
@@ -474,7 +499,7 @@ export function ReportFormView({
                       onChange={(event) =>
                         updateNumber(group.mKey, event.target.value)
                       }
-                      className="control-input mt-1 font-mono tabular-nums"
+                      className="control-input mt-1 w-full min-w-0 font-mono tabular-nums"
                     />
                   </label>
                   <label className="field-label">
@@ -487,7 +512,7 @@ export function ReportFormView({
                       onChange={(event) =>
                         updateNumber(group.fKey, event.target.value)
                       }
-                      className="control-input mt-1 font-mono tabular-nums"
+                      className="control-input mt-1 w-full min-w-0 font-mono tabular-nums"
                     />
                   </label>
                 </div>
@@ -550,7 +575,7 @@ export function ReportFormView({
                       onChange={(event) =>
                         updateItem(kind, index, "male", event.target.value)
                       }
-                      className="control-input mt-1 w-full font-mono"
+                      className="control-input mt-1 w-full min-w-0 font-mono"
                     />
                   </label>
                   <label className="field-label col-start-2 sm:col-auto">
@@ -562,7 +587,7 @@ export function ReportFormView({
                       onChange={(event) =>
                         updateItem(kind, index, "female", event.target.value)
                       }
-                      className="control-input mt-1 w-full font-mono"
+                      className="control-input mt-1 w-full min-w-0 font-mono"
                     />
                   </label>
                   <label className="field-label col-start-2 sm:col-auto">
@@ -574,7 +599,7 @@ export function ReportFormView({
                       onChange={(event) =>
                         updateItem(kind, index, "count", event.target.value)
                       }
-                      className="control-input mt-1 w-full bg-slate-50 font-mono"
+                      className="control-input mt-1 w-full min-w-0 bg-slate-50 font-mono"
                     />
                   </label>
                 </div>
@@ -639,8 +664,12 @@ export function ReportFormView({
             <button
               type="button"
               onClick={async () => {
-                await onDraftFlush?.();
-                onCancel?.();
+                try {
+                  await onDraftFlush?.();
+                  onCancel?.();
+                } catch {
+                  // The parent keeps the draft and exposes the save error in its status.
+                }
               }}
               className="control-button justify-center"
             >
@@ -658,17 +687,19 @@ export function ReportFormView({
               type="submit"
               disabled={
                 isPublishing ||
+                submitting ||
                 saveState === "saving" ||
                 saveState === "loading"
               }
-              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-teal-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-700 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-lg bg-teal-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-700 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
             >
               <Check className="h-4 w-4" />
-              {isPublishing ? "กำลังบันทึก…" : "บันทึกรายงานที่เผยแพร่"}
+              {isPublishing || submitting ? "กำลังบันทึก…" : "บันทึกรายงานที่เผยแพร่"}
             </button>
           </div>
         </div>
       </section>
+      </fieldset>
     </form>
   );
 }

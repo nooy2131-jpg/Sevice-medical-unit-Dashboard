@@ -16,18 +16,26 @@ export default function LoginPage() {
     event.preventDefault();
     setBusy(true);
     setError(null);
-    const result = await authClient.signIn.email({ email, password, callbackURL: '/' });
-    if (result.error) setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือบัญชียังไม่ได้รับอนุญาต');
-    else router.push('/');
-    setBusy(false);
+    try {
+      const result = await authClient.signIn.email({ email, password, callbackURL: '/' });
+      if (result.error) setError('อีเมลหรือรหัสผ่านไม่ถูกต้อง หรือบัญชียังไม่ได้รับอนุญาต');
+      else router.push('/');
+    } catch {
+      setError('ไม่สามารถเข้าสู่ระบบได้ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่');
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function signInGoogle() {
     setBusy(true);
     setError(null);
-    const result = await authClient.signIn.social({ provider: 'google', callbackURL: '/' });
-    if (result.error) {
-      setError('ไม่สามารถเข้าสู่ระบบด้วย Google ได้ กรุณาตรวจสอบคำเชิญของคุณ');
+    try {
+      const result = await authClient.signIn.social({ provider: 'google', callbackURL: '/' });
+      if (result.error) setError('ไม่สามารถเข้าสู่ระบบด้วย Google ได้ กรุณาตรวจสอบคำเชิญของคุณ');
+    } catch {
+      setError('ไม่สามารถเข้าสู่ระบบด้วย Google ได้ กรุณาตรวจสอบการเชื่อมต่อแล้วลองใหม่');
+    } finally {
       setBusy(false);
     }
   }
@@ -50,7 +58,7 @@ export default function LoginPage() {
           {error && <p role="alert" className="rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-800">{error}</p>}
           <button disabled={busy} className="w-full rounded-lg bg-teal-700 px-4 py-2.5 font-semibold text-white hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60">{busy ? 'กำลังเข้าสู่ระบบ…' : 'เข้าสู่ระบบ'}</button>
         </form>
-        <div className="my-6 flex items-center gap-3 text-xs text-slate-400"><span className="h-px flex-1 bg-slate-200" />หรือ<span className="h-px flex-1 bg-slate-200" /></div>
+        <div className="my-6 flex items-center gap-3 text-xs text-slate-500"><span className="h-px flex-1 bg-slate-200" />หรือ<span className="h-px flex-1 bg-slate-200" /></div>
         <button type="button" disabled={busy} onClick={signInGoogle} className="w-full rounded-lg border border-slate-300 px-4 py-2.5 font-semibold text-slate-700 hover:bg-slate-50 disabled:opacity-60">เข้าสู่ระบบด้วย Google</button>
         <p className="mt-6 text-center text-sm text-slate-600"><Link href="/reset-password" className="font-semibold text-teal-700 underline underline-offset-4">ลืมรหัสผ่าน?</Link></p>
       </section>
