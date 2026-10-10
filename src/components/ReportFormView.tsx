@@ -10,13 +10,13 @@ import {
 } from "lucide-react";
 import { DISEASE_PRESETS, PROCEDURE_PRESETS } from "../data/seedReports";
 import { isCalendarDate, shiftDate } from "../lib/dates";
+import { rawReportTopItems } from "../lib/report-normalization";
 import {
   DailyReport,
   ReportSaveState,
   TopItem,
   formatBangkokTimestamp,
   formatThaiDate,
-  normalizeTopItems,
 } from "../types/report";
 
 type NumberField =
@@ -149,7 +149,7 @@ function valuesFromReport(report?: DailyReport | null): NumberValues {
 }
 
 function itemsFromReport(items?: TopItem[]): TopItem[] {
-  const normalized = normalizeTopItems(items ?? []);
+  const normalized = rawReportTopItems(items ?? []);
   return Array.from(
     { length: 5 },
     (_, index) =>
@@ -169,7 +169,7 @@ function makeReport(
     items
       .filter((item) => item.name.trim())
       .map((item) => ({
-        name: item.name.trim(),
+        name: item.name,
         count: Math.max(0, Number(item.count) || 0),
         male: Math.max(0, Number(item.male) || 0),
         female: Math.max(0, Number(item.female) || 0),

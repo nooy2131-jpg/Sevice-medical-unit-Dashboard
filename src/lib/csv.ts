@@ -3,6 +3,8 @@
 import { parse as parseCsv } from 'csv-parse/browser/esm/sync';
 import { stringify as stringifyCsv } from 'csv-stringify/browser/esm/sync';
 import type { ReportPayload } from './report-validation';
+import type { ReportMapping } from '../types/normalization';
+import { normalizedExportItems } from './report-normalization';
 
 const HEADERS = [
   'ReportDate', 'TotalMale', 'TotalFemale', 'ThaiMale', 'ThaiFemale', 'GenMale', 'GenFemale',
@@ -10,6 +12,7 @@ const HEADERS = [
   'AdmitMale', 'AdmitFemale', 'ReferOutMale', 'ReferOutFemale', 'TopDiseasesJson', 'TopProceduresJson',
   'ReporterNote', 'UpdatedAt',
 ] as const;
+const DERIVED_HEADERS = ['NormalizedTopDiseasesJson', 'NormalizedTopProceduresJson'] as const;
 const REQUIRED_HEADERS = HEADERS.filter((header) => header !== 'UpdatedAt');
 
 const COUNT_FIELDS = [
@@ -45,13 +48,13 @@ function parseJsonCell(value: unknown): unknown {
   return JSON.parse(value);
 }
 
-type CsvColumn = (typeof HEADERS)[number];
+type CsvColumn = (typeof HEADERS)[number] | (typeof DERIVED_HEADERS)[number];
 
 function columnMap(rawHeaders: unknown[]): Map<CsvColumn, number> {
   const columns = new Map<CsvColumn, number>();
   rawHeaders.forEach((rawHeader, index) => {
     const header = typeof rawHeader === 'string' ? rawHeader.trim() : '';
-    if (!HEADERS.includes(header as CsvColumn)) {
+    if (!(HEADERS as readonly string[]).includes(header) && !(DERIVED_HEADERS as readonly string[]).includes(header)) {
       throw new Error(`CSV header is not supported: ${String(rawHeader ?? '')}`);
     }
     const column = header as CsvColumn;
@@ -115,12 +118,17 @@ export function parseImportText(input: string): unknown[] {
   });
 }
 
-export function stringifyReportsCsv(reports: readonly CsvReport[]): string {
+export function stringifyReportsCsv(reports: readonly CsvReport[], mappings?: readonly ReportMapping[]): string {
+  const headers = mappings === undefined ? HEADERS : [...HEADERS, ...DERIVED_HEADERS];
   const records = reports.map((report) => [
     report.reportDate, ...COUNT_FIELDS.map((field) => report[field]), JSON.stringify(report.topDiseases), JSON.stringify(report.topProcedures),
     report.reporterNote, report.updatedAt ?? '',
+    ...(mappings === undefined ? [] : [
+      JSON.stringify(normalizedExportItems(report, 'disease', mappings)),
+      JSON.stringify(normalizedExportItems(report, 'procedure', mappings)),
+    ]),
   ].map(protectFormula));
-  return `\uFEFF${stringifyCsv([HEADERS, ...records], { quoted: true, record_delimiter: '\n' })}`;
+  return `\uFEFF${stringifyCsv([headers, ...records], { quoted: true, record_delimiter: '\n' })}`;
 }
 
 // Keep the names used by the client components stable while retaining the

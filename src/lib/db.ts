@@ -14,6 +14,8 @@ const cachedPrisma = globalForPrisma.prisma;
 const cachedPool = globalForPrisma.pool;
 const canReuseCache = process.env.NODE_ENV !== 'production' &&
   cachedPrisma !== undefined &&
+  // Hot reload can retain a client generated before the latest schema change.
+  cachedPrisma.reportMapping !== undefined &&
   cachedPool !== undefined &&
   globalForPrisma.databaseUrl === databaseUrl;
 
