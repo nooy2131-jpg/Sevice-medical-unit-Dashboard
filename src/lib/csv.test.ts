@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { parseImportText, REPORT_CSV_HEADERS, stringifyReportsCsv } from './csv';
+import type { ReportMapping } from '../types/normalization';
 
 const report = {
   reportDate: '2025-01-01', totalMale: 1, totalFemale: 2, thaiMale: 0, thaiFemale: 0, genMale: 1, genFemale: 2,
@@ -72,5 +73,15 @@ describe('CSV import/export', () => {
     const values = headers.map((header) => ({ ReportDate: '2025-01-01T00:00:00.000Z', TotalMale: '1' } as Record<string, string>)[header] ?? '');
     const row = parseImportText(`${headers.join(',')}\n${values.join(',')}`)[0] as Record<string, unknown>;
     expect(row.reportDate).toBe('2025-01-01T00:00:00.000Z');
+  });
+
+  it('appends derived normalized columns while import ignores them and preserves raw values', () => {
+    const mappings: ReportMapping[] = [{ id: 'm1', kind: 'disease', rawName: 'โรค,ตัวอย่าง', normalizedName: 'โรคมาตรฐาน', groupName: 'กลุ่ม A', version: 1 }];
+    const csv = stringifyReportsCsv([report], mappings);
+    expect(csv).toContain('NormalizedTopDiseasesJson');
+    expect(csv).toContain('โรคมาตรฐาน');
+    const parsed = parseImportText(csv) as Array<Record<string, unknown>>;
+    expect(parsed[0].topDiseases).toEqual(report.topDiseases);
+    expect(parsed[0]).not.toHaveProperty('normalizedTopDiseases');
   });
 });

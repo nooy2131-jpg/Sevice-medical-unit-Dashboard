@@ -15,11 +15,14 @@ import {
 } from "../types/report";
 import { isCalendarDate, shiftDate } from "../lib/dates";
 import {
-  aggregateRankedItems,
+  aggregateCanonicalGroups,
+  aggregateCanonicalItems,
   dailyTotal,
   peakReport,
   recordedDayAverage,
 } from "../lib/dashboard-aggregation";
+import type { ReportMapping } from "../types/normalization";
+import { rawReportTopItems } from "../lib/report-normalization";
 
 export interface DashboardViewProps {
   reports: DailyReport[];
@@ -27,6 +30,7 @@ export interface DashboardViewProps {
   onPeriodChange: (date: string) => void;
   onEditDate: (date: string) => void;
   onNewReport: (date?: string) => void;
+  mappings?: readonly ReportMapping[];
 }
 type RangeMode = "7D" | "MONTH" | "ALL" | "SINGLE";
 
@@ -52,6 +56,7 @@ export function DashboardView({
   onPeriodChange,
   onEditDate,
   onNewReport,
+  mappings = [],
 }: DashboardViewProps) {
   const [rangeMode, setRangeMode] = useState<RangeMode>("7D");
   const [singleDate, setSingleDate] = useState(periodEndDate);
@@ -81,8 +86,10 @@ export function DashboardView({
   const averageDenominator = periodReports.length;
   const missing =
     rangeMode === "7D" ? dates.filter((date) => !byDate.has(date)) : [];
-  const diseases = aggregateRankedItems(periodReports, "topDiseases");
-  const procedures = aggregateRankedItems(periodReports, "topProcedures");
+  const diseases = aggregateCanonicalItems(periodReports, "topDiseases", mappings);
+  const procedures = aggregateCanonicalItems(periodReports, "topProcedures", mappings);
+  const diseaseGroups = aggregateCanonicalGroups(periodReports, "topDiseases", mappings);
+  const procedureGroups = aggregateCanonicalGroups(periodReports, "topProcedures", mappings);
   const trendDates = rangeMode === "7D" ? dates : visibleDates;
   const maxTrendTotal = Math.max(1, ...trendDates.map((date) => {
     const report = byDate.get(date);
@@ -126,8 +133,58 @@ export function DashboardView({
       metric(periodReports, "referOutFemale"),
     ],
   ] as const;
+  const renderNormalizedItems = (items: typeof diseases, emptyLabel: string) => (
+    <ol className="mt-4 space-y-3">
+      {items.map((item, index) => (
+        <li key={item.key} className="border-b border-slate-100 pb-3 text-sm">
+          <div className="flex items-start justify-between gap-4">
+            <span className="min-w-0">
+              <span className="mr-2 font-mono text-xs text-slate-500">{index + 1}</span>
+              <span className="font-medium text-slate-900">{item.name}</span>
+              <span className={`ml-2 rounded-full px-2 py-0.5 text-[11px] font-semibold ${item.status === "mapped" ? "bg-teal-50 text-teal-800" : "bg-amber-50 text-amber-800"}`}>
+                {item.status === "mapped" ? "มาตรฐานแล้ว" : "ยังไม่จัดกลุ่ม"}
+              </span>
+              {item.groupName && <span className="ml-2 text-xs text-slate-500">กลุ่ม {item.groupName}</span>}
+            </span>
+            <span className="shrink-0 text-right font-mono font-semibold tabular-nums text-slate-700">
+              {item.count}
+              <span className="ml-2 text-xs font-normal text-slate-500">
+                {item.male === undefined && item.female === undefined ? "(ไม่ระบุ ช/ญ)" : `(ช ${item.male ?? "—"} · ญ ${item.female ?? "—"})`}
+              </span>
+            </span>
+          </div>
+          <details className="mt-2 pl-5 text-xs text-slate-500">
+            <summary className="cursor-pointer font-semibold text-slate-600">ดูชื่อดิบ ({item.rawBreakdown.length})</summary>
+            <ul className="mt-1 space-y-1 pl-4">
+              {item.rawBreakdown.map((raw) => <li key={`${item.key}:${raw.rawName}`}>{raw.rawName} · {raw.count}</li>)}
+            </ul>
+          </details>
+        </li>
+      ))}
+      {items.length === 0 && <li className="text-sm text-slate-500">{emptyLabel}</li>}
+    </ol>
+  );
+  const renderGroups = (groups: typeof diseaseGroups) => (
+    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      {groups.map((group) => (
+        <div key={group.key} className="border-b border-slate-100 py-2 text-sm">
+          <div className="flex items-start justify-between gap-3">
+            <span className="min-w-0 break-words"><span className="font-medium text-slate-800">{group.groupName || "ไม่จัดกลุ่ม"}</span><span className="ml-2 text-xs text-slate-500">{group.status === "mapped" ? "มาตรฐานแล้ว" : "ชื่อดิบ"}</span></span>
+            <span className="shrink-0 font-mono font-semibold tabular-nums text-slate-700">{group.count}</span>
+          </div>
+          <details className="mt-1 text-xs text-slate-500">
+            <summary className="cursor-pointer font-semibold text-slate-600">ดูชื่อในกลุ่ม ({group.items.length})</summary>
+            <ul className="mt-1 space-y-1 pl-4">
+              {group.items.map((item) => <li key={item.key}>{item.name} · {item.count}{item.rawBreakdown.length > 1 ? ` (${item.rawBreakdown.map((raw) => raw.rawName).join(", ")})` : ""}</li>)}
+            </ul>
+          </details>
+        </div>
+      ))}
+      {groups.length === 0 && <p className="text-sm text-slate-500">ยังไม่มีข้อมูลในช่วงนี้</p>}
+    </div>
+  );
   return (
-    <div className="mx-auto max-w-7xl space-y-6">
+    <div className="dashboard-view mx-auto max-w-7xl space-y-6">
       <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 sm:flex-row sm:items-end sm:justify-between">
         <div>
           <p className="text-sm text-slate-500">
@@ -261,7 +318,7 @@ export function DashboardView({
           ))}
         </div>
       )}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="dashboard-summary grid gap-4 sm:grid-cols-3">
         <article className="rounded-xl border border-slate-200 bg-white p-5">
           <p className="text-sm text-slate-500">ผู้รับบริการรวมในช่วงนี้</p>
           <p className="mt-2 font-mono text-3xl font-bold tabular-nums text-slate-950">
@@ -305,8 +362,40 @@ export function DashboardView({
             รายงานรายวัน
           </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[700px] text-left text-sm">
+        <div className="mobile-report-list grid gap-3 p-4 md:hidden">
+          {visibleDates.length === 0 && <p className="text-sm text-slate-600">ยังไม่มีรายงานในช่วงนี้</p>}
+          {visibleDates.map((date) => {
+            const report = byDate.get(date);
+            return <article key={date} className="rounded-lg border border-slate-200 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div><h3 className="font-semibold text-slate-900">{formatThaiDate(date, true)}</h3><p className="mt-1 text-xs text-slate-500">{report ? "บันทึกแล้ว" : "ยังไม่มีรายงาน"}</p></div>
+                <p className="shrink-0 text-right"><span className="font-mono text-2xl font-bold tabular-nums text-slate-950">{report ? dailyTotal(report).toLocaleString("th-TH") : "—"}</span><span className="ml-1 text-xs text-slate-500">ราย</span></p>
+              </div>
+              {report ? <>
+                <p className="mt-2 text-sm text-slate-600">ชาย {report.totalMale} · หญิง {report.totalFemale}</p>
+                <details className="mt-3 border-t border-slate-100">
+                  <summary className="flex min-h-11 cursor-pointer items-center font-semibold text-teal-700">ดูรายละเอียด</summary>
+                  <dl className="space-y-2 text-sm">
+                    {[
+                      ["ตรวจโรคทั่วไป", report.genMale, report.genFemale],
+                      ["แพทย์แผนไทย", report.thaiMale, report.thaiFemale],
+                      ["ทำหัตถการ", report.procMale, report.procFemale],
+                      ["รับยาต่อเนื่อง", report.refillMale, report.refillFemale],
+                      ["ขอใบส่งตัว", report.referDocMale, report.referDocFemale],
+                      ["Admit", report.admitMale, report.admitFemale],
+                      ["Refer Out", report.referOutMale, report.referOutFemale],
+                    ].map(([label, male, female]) => <div key={label} className="flex items-start justify-between gap-3"><dt className="min-w-0 break-words text-slate-600">{label}</dt><dd className="shrink-0 text-right text-slate-900">{Number(male) + Number(female)}<span className="block text-xs text-slate-500">ช {male} · ญ {female}</span></dd></div>)}
+                  </dl>
+                  {([['โรคที่บันทึก', report.topDiseases], ['หัตถการที่บันทึก', report.topProcedures]] as const).map(([label, items]) => <div key={label} className="mt-4"><h4 className="text-sm font-semibold text-slate-900">{label}</h4><ul className="mt-2 space-y-2 text-sm text-slate-600">{rawReportTopItems(items).map((item, index) => <li key={index} className="flex justify-between gap-3"><span className="min-w-0 break-words">{item.name}</span><span className="shrink-0 text-right"><span className="font-mono tabular-nums">{item.count}</span><span className="block text-xs text-slate-500">{item.male === undefined && item.female === undefined ? "ไม่ระบุ ช/ญ" : `ช ${item.male ?? "—"} · ญ ${item.female ?? "—"}`}</span></span></li>)}</ul>{items.length === 0 && <p className="mt-1 text-sm text-slate-500">ไม่มีรายการ</p>}</div>)}
+                  <p className="mt-4 whitespace-pre-wrap break-words text-sm text-slate-600"><strong className="text-slate-900">หมายเหตุ: </strong>{report.reporterNote || "ไม่มีหมายเหตุเพิ่มเติม"}</p>
+                </details>
+                <button type="button" onClick={() => onEditDate(date)} className="control-button mt-2 w-full justify-center"><Pencil className="h-4 w-4" />แก้ไขรายงาน</button>
+              </> : <button type="button" onClick={() => onNewReport(date)} className="control-button mt-3 w-full justify-center"><FilePlus2 className="h-4 w-4" />เพิ่มรายงาน</button>}
+            </article>;
+          })}
+        </div>
+        <div className="screen-table report-table-scroll hidden overflow-x-auto md:block">
+          <table className="report-table w-full min-w-[700px] text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-semibold sm:px-6">วันที่</th>
@@ -316,7 +405,7 @@ export function DashboardView({
                   รวมทั้งหมด
                 </th>
                 <th className="px-4 py-3 font-semibold">สถานะ</th>
-                <th className="px-4 py-3 text-right font-semibold">จัดการ</th>
+                <th className="no-print px-4 py-3 text-right font-semibold">จัดการ</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -369,7 +458,7 @@ export function DashboardView({
                         <span className="text-amber-700">ยังไม่มีข้อมูล</span>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-right">
+                    <td className="no-print px-4 py-3 text-right">
                       {report ? (
                         <button
                           type="button"
@@ -402,8 +491,11 @@ export function DashboardView({
             สรุปตามประเภทบริการ
           </h2>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[600px] text-left text-sm">
+        <dl className="mobile-report-list divide-y divide-slate-100 px-4 md:hidden">
+          {serviceRows.map(([label, male, female]) => <div key={label} className="flex items-start justify-between gap-4 py-4"><dt className="min-w-0 break-words text-sm font-medium text-slate-900">{label}</dt><dd className="shrink-0 text-right"><span className="font-mono font-semibold tabular-nums text-slate-950">{male + female}</span><span className="mt-1 block text-xs text-slate-600">ชาย {male} · หญิง {female}</span></dd></div>)}
+        </dl>
+        <div className="screen-table report-table-scroll hidden overflow-x-auto md:block">
+          <table className="report-table service-table w-full min-w-[600px] text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-semibold">ประเภทบริการ</th>
@@ -442,7 +534,7 @@ export function DashboardView({
             <span><span className="mr-1 inline-block h-2.5 w-2.5 rounded-sm bg-teal-500" />หญิง</span>
           </div>
         </div>
-        <div className="mt-5 flex h-56 items-end gap-2 overflow-x-auto border-b border-slate-200 px-1 pb-2 sm:gap-3">
+        <div className="dashboard-trend mt-5 flex h-56 items-end gap-2 overflow-x-auto border-b border-slate-200 px-1 pb-2 sm:gap-3">
           {trendDates.map((date) => {
             const report = byDate.get(date);
             const totalForDay = report ? dailyTotal(report) : 0;
@@ -463,66 +555,30 @@ export function DashboardView({
           วันที่มีผู้รับบริการสูงสุด: <strong className="text-slate-900">{peak ? `${formatThaiDate(peak.reportDate, true)} (${dailyTotal(peak).toLocaleString("th-TH")} ราย)` : "—"}</strong>
         </p>
       </section>
-      <div className="grid gap-5 lg:grid-cols-2">
+      <div className="dashboard-top-items grid gap-5 lg:grid-cols-2">
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-display text-base font-bold text-slate-900">
             โรคที่พบบ่อย
           </h2>
-          <ol className="mt-4 space-y-3">
-            {diseases.map((item, index) => (
-              <li
-                key={item.name}
-                className="flex items-center justify-between gap-4 border-b border-slate-100 pb-2 text-sm"
-              >
-                <span>
-                  <span className="mr-2 font-mono text-xs text-slate-500">
-                    {index + 1}
-                  </span>
-                  {item.name}
-                </span>
-                <span className="text-right font-mono font-semibold tabular-nums text-slate-700">
-                  {item.count}
-                  <span className="ml-2 text-xs font-normal text-slate-500">(ช {item.male} · ญ {item.female})</span>
-                </span>
-              </li>
-            ))}
-            {diseases.length === 0 && (
-              <li className="text-sm text-slate-500">
-                ยังไม่มีข้อมูลโรคในช่วงนี้
-              </li>
-            )}
-          </ol>
+          {renderNormalizedItems(diseases, "ยังไม่มีข้อมูลโรคในช่วงนี้")}
         </section>
         <section className="rounded-xl border border-slate-200 bg-white p-5">
           <h2 className="font-display text-base font-bold text-slate-900">
             หัตถการที่พบบ่อย
           </h2>
-          <ol className="mt-4 space-y-3">
-            {procedures.map((item, index) => (
-              <li
-                key={item.name}
-                className="flex items-center justify-between gap-4 border-b border-slate-100 pb-2 text-sm"
-              >
-                <span>
-                  <span className="mr-2 font-mono text-xs text-slate-500">
-                    {index + 1}
-                  </span>
-                  {item.name}
-                </span>
-                <span className="text-right font-mono font-semibold tabular-nums text-slate-700">
-                  {item.count}
-                  <span className="ml-2 text-xs font-normal text-slate-500">(ช {item.male} · ญ {item.female})</span>
-                </span>
-              </li>
-            ))}
-            {procedures.length === 0 && (
-              <li className="text-sm text-slate-500">
-                ยังไม่มีข้อมูลหัตถการในช่วงนี้
-              </li>
-            )}
-          </ol>
+          {renderNormalizedItems(procedures, "ยังไม่มีข้อมูลหัตถการในช่วงนี้")}
         </section>
       </div>
+      <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
+        <div className="border-b border-slate-100 pb-4">
+          <h2 className="font-display text-base font-bold text-slate-900">ยอดรวมตามกลุ่มมาตรฐาน</h2>
+          <p className="mt-1 text-xs text-slate-500">รวมชื่อที่อนุมัติแล้ว และแยกชื่อที่ยังไม่จัดกลุ่มไว้ชัดเจน</p>
+        </div>
+        <div className="dashboard-groups grid gap-6 lg:grid-cols-2">
+          <div><h3 className="mt-4 text-sm font-semibold text-slate-800">โรค</h3>{renderGroups(diseaseGroups)}</div>
+          <div><h3 className="mt-4 text-sm font-semibold text-slate-800">หัตถการ</h3>{renderGroups(procedureGroups)}</div>
+        </div>
+      </section>
       <section className="rounded-xl border border-slate-200 bg-white p-5 sm:p-6">
         <div className="border-b border-slate-100 pb-4">
           <h2 className="font-display text-base font-bold text-slate-900">บันทึกหมายเหตุประจำวัน</h2>
@@ -530,12 +586,12 @@ export function DashboardView({
         </div>
         <div className="divide-y divide-slate-100">
           {[...periodReports].reverse().slice(0, 5).map((report) => (
-            <div key={report.reportDate} className="flex flex-col justify-between gap-2 py-3 text-sm sm:flex-row sm:items-center">
+            <div key={report.reportDate} className="dashboard-note flex flex-col justify-between gap-2 py-3 text-sm sm:flex-row sm:items-center">
               <div>
                 <p className="text-xs text-slate-500">{formatThaiDate(report.reportDate, true)} · รวม {dailyTotal(report).toLocaleString("th-TH")} ราย</p>
                 <p className="mt-1 whitespace-pre-wrap text-slate-700">{report.reporterNote || "ไม่มีหมายเหตุเพิ่มเติม"}</p>
               </div>
-              <button type="button" onClick={() => onEditDate(report.reportDate)} className="self-start text-xs font-semibold text-teal-700 hover:underline sm:self-center">แก้ไขข้อมูลย้อนหลัง</button>
+              <button type="button" onClick={() => onEditDate(report.reportDate)} className="no-print self-start text-xs font-semibold text-teal-700 hover:underline sm:self-center">แก้ไขข้อมูลย้อนหลัง</button>
             </div>
           ))}
           {periodReports.length === 0 && <p className="py-4 text-sm text-slate-500">ยังไม่มีรายงานในช่วงนี้</p>}

@@ -12,6 +12,8 @@ import {
 import { parseReportsImport } from "../lib/csv";
 import { isCalendarDate, todayBangkok } from "../lib/dates";
 import { validateReport } from "../lib/report-validation";
+import type { ReportMapping } from "../types/normalization";
+import { normalizeReportTopItems } from "../lib/report-normalization";
 
 export interface ImportPreview {
   rows: DailyReport[];
@@ -24,6 +26,8 @@ export interface RecordsTableViewProps {
   onEditDate: (date: string) => void;
   onDeleteDate: (date: string) => Promise<void>;
   onExportCsv: () => Promise<void> | void;
+  onExportNormalizedCsv?: () => Promise<void> | void;
+  mappings?: readonly ReportMapping[];
   onImportRows?: (
     rows: DailyReport[],
     duplicateMode: "skip" | "overwrite",
@@ -119,6 +123,8 @@ export function RecordsTableView({
   onEditDate,
   onDeleteDate,
   onExportCsv,
+  onExportNormalizedCsv,
+  mappings = [],
   onImportRows,
 }: RecordsTableViewProps) {
   const [query, setQuery] = useState("");
@@ -249,7 +255,7 @@ export function RecordsTableView({
     }
   };
   return (
-    <div className="mx-auto max-w-7xl space-y-5">
+    <div className="records-view mx-auto max-w-7xl space-y-5">
       <div className="flex flex-col gap-4 border-b border-slate-200 pb-5 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <p className="text-sm text-slate-500">
@@ -260,30 +266,30 @@ export function RecordsTableView({
             ตารางรายงานย้อนหลัง
           </h1>
         </div>
-        <div className="flex flex-wrap items-end gap-2">
-          <label className="relative">
+        <div className="no-print flex w-full min-w-0 flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-end">
+          <label className="relative w-full sm:w-56">
             <span className="sr-only">ค้นหารายงาน</span>
             <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder="ค้นหาวันที่ โรค หัตถการ…"
-              className="control-input pl-9 text-sm"
+              className="control-input w-full pl-9 text-sm"
             />
           </label>
-          <label>
+          <label className="w-full sm:w-auto">
             <span className="sr-only">เรียงลำดับ</span>
             <select
               value={sort}
               onChange={(event) => setSort(event.target.value as typeof sort)}
-              className="control-select text-sm"
+              className="control-select w-full text-sm sm:w-auto"
             >
               <option value="date-desc">วันที่ล่าสุดก่อน</option>
               <option value="date-asc">วันที่เก่าสุดก่อน</option>
               <option value="total-desc">ยอดรวมมากสุดก่อน</option>
             </select>
           </label>
-          <div className="flex items-end gap-2">
+          <div className="flex w-full items-end gap-2 sm:w-auto">
             <label className="block">
               <span className="sr-only">วันที่รายงานที่ต้องการเปิด</span>
               <input
@@ -294,13 +300,13 @@ export function RecordsTableView({
                   setDateError(null);
                 }}
                 aria-describedby={dateError ? "records-date-error" : undefined}
-                className="control-input font-mono text-sm tabular-nums"
+                className="control-input w-full font-mono text-sm tabular-nums sm:w-auto"
               />
             </label>
             <button
               type="button"
               onClick={openSelectedDate}
-              className="control-button"
+              className="control-button shrink-0"
             >
               เปิดรายงาน
             </button>
@@ -313,15 +319,26 @@ export function RecordsTableView({
           <button
             type="button"
             onClick={() => void onExportCsv()}
-            className="control-button"
+            className="control-button w-full sm:w-auto"
             disabled={reports.length === 0}
           >
             <Download className="h-4 w-4" />
             ส่งออก CSV
           </button>
+          {onExportNormalizedCsv && (
+            <button
+              type="button"
+              onClick={() => void onExportNormalizedCsv()}
+              className="control-button w-full sm:w-auto"
+              disabled={reports.length === 0}
+            >
+              <Download className="h-4 w-4" />
+              ส่งออก CSV + มาตรฐาน
+            </button>
+          )}
           {isAdmin && onImportRows && (
             <>
-              <label className="control-button cursor-pointer">
+              <label className="control-button w-full cursor-pointer sm:w-auto">
                 <Upload className="h-4 w-4" />
                 นำเข้าไฟล์
                 <input
@@ -342,7 +359,7 @@ export function RecordsTableView({
                   setPasteImportError(null);
                   setPasteImportOpen(true);
                 }}
-                className="control-button"
+                className="control-button w-full sm:w-auto"
               >
                 วาง CSV / JSON / TSV
               </button>
@@ -350,9 +367,9 @@ export function RecordsTableView({
           )}
         </div>
       </div>
-      <div className="overflow-hidden rounded-xl border border-slate-200 bg-white">
+      <div className="records-table-scroll hidden overflow-hidden rounded-xl border border-slate-200 bg-white print:block lg:block">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1200px] text-left text-sm">
+          <table className="records-table w-full min-w-[1200px] text-left text-sm">
             <thead className="bg-slate-50 text-xs text-slate-600">
               <tr>
                 <th className="px-4 py-3 font-semibold">วันที่รายงาน</th>
@@ -406,7 +423,7 @@ export function RecordsTableView({
                 </tr>
               ) : (
                 filtered.map((report) => {
-                  const topDisease = normalizeTopItems(report.topDiseases)[0];
+                  const topDisease = normalizeReportTopItems(report.topDiseases, "disease", mappings)[0];
                   const serviceCell = (male: number, female: number) => (
                     <td className="whitespace-nowrap px-4 py-3 text-right tabular-nums text-slate-700">
                       <span className="font-semibold text-slate-900">{male + female}</span>
@@ -435,7 +452,7 @@ export function RecordsTableView({
                       <span className="font-semibold text-slate-900">Refer {report.referOutMale + report.referOutFemale}</span>
                     </td>
                     <td className="max-w-56 truncate px-4 py-3">
-                      {topDisease ? `${topDisease.name} (${topDisease.count})` : "—"}
+                      {topDisease ? `${topDisease.rawBreakdown[0]?.rawName ?? topDisease.name} (${topDisease.count})` : "—"}
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-500">
                       <span className="block">
@@ -481,6 +498,148 @@ export function RecordsTableView({
             </tbody>
           </table>
         </div>
+      </div>
+      <div
+        className="mobile-report-list space-y-3 lg:hidden print:hidden"
+        aria-label="รายงานรายวัน"
+      >
+        {filtered.length === 0 ? (
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500">
+            {reports.length === 0 ? (
+              <div className="flex flex-col items-center gap-3">
+                <p>ยังไม่มีข้อมูลรายงาน</p>
+                <button
+                  type="button"
+                  onClick={openSelectedDate}
+                  className="control-button min-h-11"
+                >
+                  เปิดรายงานวันที่เลือก
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col items-center gap-3">
+                <p>ไม่พบรายงานที่ตรงกับคำค้น</p>
+                <button
+                  type="button"
+                  onClick={() => setQuery("")}
+                  className="control-button min-h-11"
+                >
+                  ล้างคำค้น
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          filtered.map((report) => {
+            const total = report.totalMale + report.totalFemale;
+            const topDisease = normalizeReportTopItems(
+              report.topDiseases,
+              "disease",
+              mappings,
+            )[0];
+            const rawDisease =
+              topDisease?.rawBreakdown[0]?.rawName ?? topDisease?.name;
+            return (
+              <article
+                key={report.reportDate}
+                className="rounded-xl border border-slate-200 bg-white p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <time
+                      dateTime={report.reportDate}
+                      className="block font-display text-lg font-bold text-slate-950"
+                    >
+                      {formatThaiDate(report.reportDate, true)}
+                    </time>
+                    <span className="font-mono text-xs tabular-nums text-slate-500">
+                      {report.reportDate}
+                    </span>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <p className="text-xs text-slate-500">ผู้รับบริการรวม</p>
+                    <p className="font-mono text-lg font-bold tabular-nums text-slate-950">
+                      {total} <span className="font-sans text-sm font-semibold">คน</span>
+                    </p>
+                    <p className="font-mono text-xs tabular-nums text-slate-600">
+                      ช {report.totalMale} · ญ {report.totalFemale}
+                    </p>
+                  </div>
+                </div>
+                <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3 border-y border-slate-100 py-3 text-sm">
+                  {[
+                    ["ตรวจโรคทั่วไป", report.genMale + report.genFemale],
+                    ["หัตถการ", report.procMale + report.procFemale],
+                    ["แพทย์แผนไทย", report.thaiMale + report.thaiFemale],
+                    ["รับยาเดิม", report.refillMale + report.refillFemale],
+                  ].map(([label, value]) => (
+                    <div key={String(label)} className="min-w-0">
+                      <p className="truncate text-xs text-slate-500">{label}</p>
+                      <p className="mt-0.5 font-mono font-semibold tabular-nums text-slate-900">
+                        {value} คน
+                      </p>
+                    </div>
+                  ))}
+                  <p className="col-span-2 text-xs leading-5 text-slate-600">
+                    ใบส่งตัว {report.referDocMale + report.referDocFemale} · Admit {report.admitMale + report.admitFemale} · Refer {report.referOutMale + report.referOutFemale}
+                  </p>
+                </div>
+                <div className="mt-3 min-w-0">
+                  <p className="text-xs font-semibold text-slate-500">โรคอันดับ 1</p>
+                  {topDisease ? (
+                    <p className="mt-1 break-words text-sm text-slate-800">
+                      <span>
+                        {rawDisease} ({topDisease.count})
+                      </span>
+                      {topDisease.status === "mapped" && (
+                        <span className="ml-2 text-xs text-teal-700">
+                          → {topDisease.name} · {topDisease.groupName}
+                        </span>
+                      )}
+                      {topDisease.status === "unmapped" && (
+                        <span className="ml-2 text-xs text-amber-700">
+                          ยังไม่จัดกลุ่ม
+                        </span>
+                      )}
+                    </p>
+                  ) : (
+                    <p className="mt-1 text-sm text-slate-500">—</p>
+                  )}
+                </div>
+                <p className="mt-3 text-xs leading-5 text-slate-500">
+                  อัปเดต {formatBangkokTimestamp(report.updatedAt)} โดย {report.lastEditor?.name ?? report.updatedBy ?? "ไม่ระบุ"}
+                </p>
+                <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                  <button
+                    type="button"
+                    onClick={() => setInspectDate(report.reportDate)}
+                    className="control-button min-h-11 flex-1 border-teal-200 text-teal-800 hover:bg-teal-50"
+                  >
+                    ดูรายละเอียด
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onEditDate(report.reportDate)}
+                    className="control-button min-h-11 flex-1"
+                  >
+                    แก้ไข
+                  </button>
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setDeleteDate(report.reportDate)}
+                      className="control-button min-h-11 px-3 text-rose-700"
+                      aria-label={`ลบรายงาน ${report.reportDate}`}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                      <span className="sr-only">ลบ</span>
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })
+        )}
       </div>
       {inspect && (
         <Dialog open={Boolean(inspect)} labelledBy="inspect-title" onClose={() => setInspectDate(null)} className="max-w-2xl">
@@ -552,24 +711,29 @@ export function RecordsTableView({
                   โรคที่พบบ่อย
                 </h3>
                 <ol className="mt-2 space-y-1 text-sm text-slate-700">
-                  {normalizeTopItems(inspect.topDiseases).map((item, index) => (
+                  {normalizeReportTopItems(inspect.topDiseases, "disease", mappings).map((item, index) => {
+                    const rawName = item.rawBreakdown[0]?.rawName ?? item.name;
+                    return (
                     <li
                       key={`${item.name}-${index}`}
                       className="flex justify-between gap-2"
                     >
                       <span>
-                        {index + 1}. {item.name}
+                        {index + 1}. {rawName}
+                        {item.status === "mapped" && <span className="ml-2 text-xs text-teal-700">→ {item.name} · {item.groupName}</span>}
+                        {item.status === "unmapped" && <span className="ml-2 text-xs text-amber-700">ยังไม่จัดกลุ่ม</span>}
                       </span>
                       <span className="text-right font-mono">
                         <span className="block">{item.count}</span>
                         {(item.male !== undefined || item.female !== undefined) && (
                           <span className="block text-xs text-slate-500">
-                            ช/ญ {item.male ?? 0}/{item.female ?? 0}
+                            ช/ญ {item.male ?? "—"}/{item.female ?? "—"}
                           </span>
                         )}
                       </span>
                     </li>
-                  ))}
+                    );
+                  })}
                 </ol>
               </div>
               <div>
@@ -577,25 +741,30 @@ export function RecordsTableView({
                   หัตถการ
                 </h3>
                 <ol className="mt-2 space-y-1 text-sm text-slate-700">
-                  {normalizeTopItems(inspect.topProcedures).map(
-                    (item, index) => (
+                  {normalizeReportTopItems(inspect.topProcedures, "procedure", mappings).map(
+                    (item, index) => {
+                      const rawName = item.rawBreakdown[0]?.rawName ?? item.name;
+                      return (
                       <li
                         key={`${item.name}-${index}`}
                         className="flex justify-between gap-2"
                       >
                         <span>
-                          {index + 1}. {item.name}
+                          {index + 1}. {rawName}
+                          {item.status === "mapped" && <span className="ml-2 text-xs text-teal-700">→ {item.name} · {item.groupName}</span>}
+                          {item.status === "unmapped" && <span className="ml-2 text-xs text-amber-700">ยังไม่จัดกลุ่ม</span>}
                         </span>
                         <span className="text-right font-mono">
                           <span className="block">{item.count}</span>
                           {(item.male !== undefined || item.female !== undefined) && (
                             <span className="block text-xs text-slate-500">
-                              ช/ญ {item.male ?? 0}/{item.female ?? 0}
+                            ช/ญ {item.male ?? "—"}/{item.female ?? "—"}
                             </span>
                           )}
                         </span>
                       </li>
-                    ),
+                      );
+                    },
                   )}
                 </ol>
               </div>

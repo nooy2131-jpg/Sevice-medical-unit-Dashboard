@@ -19,7 +19,7 @@ export default async function ProtectedLayout({
     throw reason;
   }
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900">
+    <div className="app-shell min-h-screen bg-slate-50 text-slate-900">
       <header className="no-print sticky top-0 z-30 border-b border-slate-200 bg-white">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 lg:flex-row lg:items-center lg:justify-between lg:gap-4 sm:px-6">
           <Link
@@ -31,7 +31,7 @@ export default async function ProtectedLayout({
           <ProtectedNav user={user} />
         </div>
       </header>
-      <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
+      <main className="app-main mx-auto max-w-7xl px-4 py-6 sm:px-6 sm:py-8">
         {children}
       </main>
     </div>

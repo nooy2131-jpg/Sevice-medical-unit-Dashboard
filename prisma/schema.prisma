@@ -12,6 +12,11 @@ enum Role {
   member
 }
 
+enum MappingKind {
+  disease
+  procedure
+}
+
 model User {
   id            String    @id @default(cuid())
   name          String
@@ -114,6 +119,22 @@ model DailyReport {
   createdBy   User     @relation("ReportCreator", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy   User     @relation("ReportEditor", fields: [updatedById], references: [id], onDelete: Restrict)
 
+  @@index([deletedAt])
+}
+
+model ReportMapping {
+  id             String      @id @default(uuid())
+  kind           MappingKind
+  rawName        String
+  normalizedName String
+  groupName      String
+  version        Int         @default(1)
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  deletedAt      DateTime?
+
+  @@unique([kind, rawName])
+  @@index([kind])
   @@index([deletedAt])
 }
 

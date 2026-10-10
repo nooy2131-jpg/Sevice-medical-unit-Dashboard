@@ -33,3 +33,5 @@ Existing components, Thai copy, service categories, disease/procedure presets, d
 - Failed operations preserve the editor's draft.
 - Imports expose validation and duplicate decisions before writing data.
 - Retain the established site's visual identity.
+- Dashboard disease and procedure statistics use approved standardized names and groups while preserving unclassified entries.
+- Admin reviews suggested name mappings before approval. Historical reports preserve raw names; exports include raw and derived values separately.

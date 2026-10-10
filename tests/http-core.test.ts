@@ -4,6 +4,7 @@ import { POST as createInvitation } from '@/app/api/invitations/route';
 import { POST as resendInvitation, DELETE as revokeInvitation } from '@/app/api/invitations/[id]/route';
 import { POST as acceptInvitation } from '@/app/api/invitations/accept/route';
 import { PATCH as updateUser } from '@/app/api/users/[id]/route';
+import { POST as approveMapping, DELETE as removeMapping } from '@/app/api/mappings/route';
 
 describe('HTTP request guards', () => {
   it('rejects a cross-site state-changing request before authorization', () => {
@@ -63,7 +64,7 @@ describe('HTTP request guards', () => {
     expect(response.status).toBe(413);
   });
 
-  it('rejects cross-site state changes at every auth/invitation route', async () => {
+  it('rejects cross-site state changes at auth, invitation, and mapping routes', async () => {
     const request = (url: string, method: string, body?: string) => new Request(`http://localhost:40000${url}`, {
       method,
       headers: { origin: 'https://evil.example', 'content-type': 'application/json' },
@@ -75,6 +76,8 @@ describe('HTTP request guards', () => {
       revokeInvitation(request('/api/invitations/id', 'DELETE'), { params: Promise.resolve({ id: 'id' }) }),
       acceptInvitation(request('/api/invitations/accept', 'POST', '{}')),
       updateUser(request('/api/users/id', 'PATCH', '{}'), { params: Promise.resolve({ id: 'id' }) }),
+      approveMapping(request('/api/mappings', 'POST', '{}')),
+      removeMapping(request('/api/mappings', 'DELETE', '{}')),
     ];
     const responses = await Promise.all(cases);
     expect(responses.every((response) => response.status === 403)).toBe(true);

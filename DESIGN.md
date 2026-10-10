@@ -2,7 +2,7 @@
 
 Extend the existing light dashboard: white surfaces on slate-50, slate text, teal primary controls, quiet borders, 12px card corners, Thai display/body typography, and tabular numbers. This is an operational reporting app; hierarchy and clear state feedback take priority over decorative effects.
 
-Preserve the current hospital identity and Thai reporting copy. New login, invitation, and Settings surfaces use the same typography, colors, buttons, and form treatment. Do not replace the visual identity or invent hospital claims. Forms need persistent labels, accessible validation, visible keyboard focus, and touch-friendly controls; compact desktop tables can scroll horizontally on mobile.
+Preserve the current hospital identity and Thai reporting copy. New login, invitation, and Settings surfaces use the same typography, colors, buttons, and form treatment. Do not replace the visual identity or invent hospital claims. Forms need persistent labels, accessible validation, visible keyboard focus, and touch-friendly controls; daily reports use cards on mobile, with key totals and a full-detail disclosure or dialog. Desktop retains the tables.
 
 ## Form Controls and Navigation
 
@@ -20,3 +20,9 @@ Production uses a restricted Argo CD AppProject and an immutable application sou
 - **Migration role**: privileged PostgreSQL login used only by the Argo CD PreSync job to apply Prisma migrations and bootstrap the first Admin.
 - **Source revision**: immutable Git commit SHA selected by the GitOps Application for a production release.
 - **Image digest**: immutable OCI content identifier reported by the successful CI publish job and applied through Argo CD Kustomize image overrides.
+
+## Responsive Reports and Print
+
+Dashboard daily reports switch to cards below 768px; history switches below 1024px so its wider table remains readable. Cards reuse the same date, filtering, and sorting results as desktop. Full details preserve raw names, gender breakdowns, services, and notes; editing and Admin deletion retain their existing workflows.
+
+Print uses A4 portrait with 12mm margins, repeated table headers, wrapped text, and rows that avoid page splits. Print the desktop tables at every viewport width and hide navigation, filters, and action controls. The scrolling trend chart is replaced by its peak summary; daily totals remain in the table.

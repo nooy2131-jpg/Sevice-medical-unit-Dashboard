@@ -2,11 +2,15 @@ import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
 import { prisma } from './db';
 import { deleteDraft, deleteReport, findReport, getDraft, importReports, saveDraft, saveReport } from './report-service';
 import type { ReportPayload } from './report-validation';
+import { listMappingCandidates, upsertMapping } from './normalization-service';
+import { aggregateNormalizedItems } from './report-normalization';
+import { parseReportsImport, exportReportsCsv } from './csv';
 
 const canRun = process.env.OKR_RUN_DB_TESTS === '1' && /(?:localhost|127\.0\.0\.1)/.test(process.env.DATABASE_URL ?? '');
 const suite = canRun ? describe : describe.skip;
 const actor = { id: `integration-${crypto.randomUUID()}`, email: `integration-${crypto.randomUUID()}@example.invalid`, name: 'Integration Test', role: 'admin' as const };
 const dates = [`2099-01-${String(Math.floor(Math.random() * 20) + 1).padStart(2, '0')}`, `2099-02-${String(Math.floor(Math.random() * 20) + 1).padStart(2, '0')}`];
+const rawAlias = ` Common cld ${actor.id} `;
 
 function report(reportDate: string, totalMale: number): ReportPayload {
   return {
@@ -22,6 +26,7 @@ suite('report service database invariants', () => {
   });
 
   afterAll(async () => {
+    await prisma.reportMapping.deleteMany({ where: { rawName: rawAlias } });
     await prisma.auditLog.deleteMany({ where: { actorId: actor.id } });
     await prisma.draft.deleteMany({ where: { userId: actor.id } });
     await prisma.dailyReport.deleteMany({ where: { createdById: actor.id } });
@@ -76,5 +81,23 @@ suite('report service database invariants', () => {
   it('rolls back an import when one overwrite CAS fails', async () => {
     await expect(importReports({ reports: [report(dates[0], 20), report(dates[1], 4)], mode: 'overwrite', expectedVersions: { [dates[0]]: 999, [dates[1]]: 0 } }, actor)).rejects.toBeDefined();
     expect(await findReport(dates[1])).toBeNull();
+  });
+
+  it('keeps exact raw names across publication, mapping, statistics, export, and import', async () => {
+    const payload = { ...report(dates[1], 2), topDiseases: [{ name: rawAlias, count: 2, male: 0, female: 2 }] };
+    await saveReport(payload, 0, actor);
+    const published = await findReport(dates[1]);
+    if (!published) throw new Error('Expected published report');
+    expect(published.topDiseases[0].name).toBe(rawAlias);
+    expect(await listMappingCandidates()).toContainEqual({ kind: 'disease', rawName: rawAlias, count: 2, dates: [dates[1]], suggestion: null });
+    const mapping = await upsertMapping({ kind: 'disease', rawName: rawAlias, normalizedName: 'ไข้หวัด', groupName: 'ระบบทางเดินหายใจ', expectedVersion: 0 }, actor);
+    const statistics = aggregateNormalizedItems([published], 'topDiseases', [mapping]);
+    expect(statistics[0]).toMatchObject({ name: 'ไข้หวัด', count: 2, male: 0, female: 2 });
+    expect(statistics[0].rawBreakdown[0].rawName).toBe(rawAlias);
+    const [imported] = parseReportsImport(exportReportsCsv([published], [mapping]));
+    expect(imported).toMatchObject({ topDiseases: [{ name: rawAlias, count: 2, male: 0, female: 2 }] });
+    const after = await findReport(dates[1]);
+    expect(after?.topDiseases).toEqual(published.topDiseases);
+    expect(after?.version).toBe(published.version);
   });
 });

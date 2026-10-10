@@ -77,8 +77,8 @@ function parseTopItems(value: unknown, path: string, issues: ValidationIssue[]):
       issues.push({ path: itemPath, message: 'must be an object' });
       return [];
     }
-    const name = typeof raw.name === 'string' ? raw.name.trim() : '';
-    if (!name || name.length > MAX_ITEM_NAME_LENGTH) {
+    const name = typeof raw.name === 'string' ? raw.name : '';
+    if (!name.trim() || name.length > MAX_ITEM_NAME_LENGTH) {
       issues.push({ path: `${itemPath}.name`, message: `must be 1-${MAX_ITEM_NAME_LENGTH} characters` });
       return [];
     }

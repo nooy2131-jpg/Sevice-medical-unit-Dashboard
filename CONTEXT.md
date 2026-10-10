@@ -24,3 +24,18 @@ An independently entered count for the reporting date. Service categories may ov
 
 **Aggregate data**:
 Service counts and summary observations without patient identifiers.
+
+**Raw report name**:
+The disease or procedure name stored in a daily report as entered by its reporter. Normalization does not replace this historical name.
+
+**Standardized name**:
+An Admin-approved name used to combine equivalent raw report names for statistics. A disease name and a procedure name belong to separate sets of mappings.
+
+**Symptom or service group**:
+A reporting category that brings related standardized disease or procedure names together. Group membership does not mean that the original entries describe an identical diagnosis or an individual patient.
+
+**Approved mapping**:
+An Admin's assignment of one raw report name to a standardized name and group. Suggested assignments have no effect on statistics until approved.
+
+**Unclassified entry**:
+A report item without an approved mapping. Its original name and count remain visible in statistics.

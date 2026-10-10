@@ -19,8 +19,10 @@ export function ProtectedNav({ user }: { user: User }) {
     { href: "/records", label: "รายงานย้อนหลัง" },
     { href: `/reports/${todayBangkok()}`, label: "บันทึกวันนี้" },
   ];
-  if (user.role === "admin")
+  if (user.role === "admin") {
+    links.push({ href: "/mapping", label: "จัดการ Mapping" });
     links.push({ href: "/settings", label: "ตั้งค่า" });
+  }
   const isLinkActive = (href: string) =>
     href.startsWith("/reports/")
       ? pathname.startsWith("/reports/")

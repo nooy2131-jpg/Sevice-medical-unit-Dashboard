@@ -12,6 +12,7 @@ import {
   ReportDraftResponse,
   ReportSaveState,
 } from "../types/report";
+import type { ReportMapping } from "../types/normalization";
 import { exportReportsCsv } from "../lib/csv";
 import { isCalendarDate, todayBangkok } from "../lib/dates";
 import { validateReport } from "../lib/report-validation";
@@ -105,6 +106,20 @@ function getError(payload: Record<string, unknown>, fallback: string): string {
   return typeof payload.message === "string" ? payload.message : fallback;
 }
 
+function readMappings(payload: Record<string, unknown>): ReportMapping[] {
+  if (!Array.isArray(payload.mappings)) throw new Error("ไม่สามารถโหลด Mapping ได้ จึงไม่แสดงสถิติที่จัดมาตรฐาน");
+  const mappings: ReportMapping[] = [];
+  for (const value of payload.mappings) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("ข้อมูล Mapping ไม่ถูกต้อง");
+    const mapping = value as Record<string, unknown>;
+    if ((mapping.kind !== "disease" && mapping.kind !== "procedure") || typeof mapping.id !== "string" || typeof mapping.rawName !== "string" || typeof mapping.normalizedName !== "string" || typeof mapping.groupName !== "string" || typeof mapping.version !== "number") {
+      throw new Error("ข้อมูล Mapping ไม่ถูกต้อง");
+    }
+    mappings.push(mapping as unknown as ReportMapping);
+  }
+  return mappings;
+}
+
 export function ReportsDashboardClient({
   initialDate,
 }: {
@@ -112,6 +127,7 @@ export function ReportsDashboardClient({
 }) {
   const router = useRouter();
   const [reports, setReports] = useState<DailyReport[]>([]);
+  const [mappings, setMappings] = useState<ReportMapping[]>([]);
   const [periodEndDate, setPeriodEndDate] = useState(initialDate);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -119,15 +135,21 @@ export function ReportsDashboardClient({
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/reports", { cache: "no-store" });
+      const [response, mappingResponse] = await Promise.all([
+        fetch("/api/reports", { cache: "no-store" }),
+        fetch("/api/mappings", { cache: "no-store" }),
+      ]);
       const payload = await readJson(response);
-      if (!response.ok)
-        throw new Error(getError(payload, "ไม่สามารถโหลดรายงานได้"));
+      const mappingPayload = await readJson(mappingResponse);
+      if (!response.ok) throw new Error(getError(payload, "ไม่สามารถโหลดรายงานได้"));
+      if (!mappingResponse.ok) throw new Error(getError(mappingPayload, "ไม่สามารถโหลด Mapping ได้ จึงไม่แสดงสถิติที่จัดมาตรฐาน"));
+      const loadedMappings = readMappings(mappingPayload);
       setReports(
         Array.isArray(payload.reports)
           ? (payload.reports as DailyReport[])
           : [],
       );
+      setMappings(loadedMappings);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "ไม่สามารถโหลดรายงานได้",
@@ -164,6 +186,7 @@ export function ReportsDashboardClient({
   return (
     <DashboardView
       reports={reports}
+      mappings={mappings}
       periodEndDate={periodEndDate}
       onPeriodChange={(date) => {
         if (isCalendarDate(date)) setPeriodEndDate(date);
@@ -181,21 +204,28 @@ export function ReportsDashboardClient({
 export function ReportsRecordsClient({ role }: { role: UserRole }) {
   const router = useRouter();
   const [reports, setReports] = useState<DailyReport[]>([]);
+  const [mappings, setMappings] = useState<ReportMapping[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadReports = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch("/api/reports", { cache: "no-store" });
+      const [response, mappingResponse] = await Promise.all([
+        fetch("/api/reports", { cache: "no-store" }),
+        fetch("/api/mappings", { cache: "no-store" }),
+      ]);
       const payload = await readJson(response);
-      if (!response.ok)
-        throw new Error(getError(payload, "ไม่สามารถโหลดรายงานได้"));
+      const mappingPayload = await readJson(mappingResponse);
+      if (!response.ok) throw new Error(getError(payload, "ไม่สามารถโหลดรายงานได้"));
+      if (!mappingResponse.ok) throw new Error(getError(mappingPayload, "ไม่สามารถโหลด Mapping ได้ จึงไม่แสดงสถิติที่จัดมาตรฐาน"));
+      const loadedMappings = readMappings(mappingPayload);
       setReports(
         Array.isArray(payload.reports)
           ? (payload.reports as DailyReport[])
           : [],
       );
+      setMappings(loadedMappings);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "ไม่สามารถโหลดรายงานได้",
@@ -214,6 +244,18 @@ export function ReportsRecordsClient({ role }: { role: UserRole }) {
     const link = document.createElement("a");
     link.href = url;
     link.download = `daily-reports-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+  };
+  const exportNormalizedCsv = () => {
+    const csv = exportReportsCsv(reports, mappings);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `daily-reports-normalized-${new Date().toISOString().slice(0, 10)}.csv`;
     document.body.appendChild(link);
     link.click();
     link.remove();
@@ -285,12 +327,14 @@ export function ReportsRecordsClient({ role }: { role: UserRole }) {
   return (
     <RecordsTableView
       reports={reports}
+      mappings={mappings}
       isAdmin={role === "admin"}
       onEditDate={(date) => {
         router.push(`/reports/${date}`);
       }}
       onDeleteDate={deleteReport}
       onExportCsv={exportCsv}
+      onExportNormalizedCsv={exportNormalizedCsv}
       onImportRows={role === "admin" ? importRows : undefined}
     />
   );

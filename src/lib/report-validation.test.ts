@@ -21,4 +21,10 @@ describe('report validation', () => {
     expect(() => validateReport({ ...valid, reporterNote: 'x'.repeat(10_001) })).toThrow(ReportValidationError);
     expect(() => validateReport({ ...valid, topDiseases: [{ name: 'flu', count: 1.5 }] })).toThrow(ReportValidationError);
   });
+
+  it('preserves exact raw names but rejects whitespace-only names', () => {
+    const rawName = ' Common cld ';
+    expect(validateReport({ ...valid, topDiseases: [{ name: rawName, count: 2 }] }).topDiseases[0].name).toBe(rawName);
+    expect(() => validateReport({ ...valid, topDiseases: [{ name: '   ', count: 2 }] })).toThrow(ReportValidationError);
+  });
 });

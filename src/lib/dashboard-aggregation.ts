@@ -1,4 +1,11 @@
 import { DailyReport, normalizeTopItems } from "../types/report";
+import type { ReportMapping } from "../types/normalization";
+import {
+  aggregateNormalizedGroups,
+  aggregateNormalizedItems,
+  type NormalizedGroupTotal,
+  type NormalizedTopItem,
+} from "./report-normalization";
 
 export type RankedDashboardItem = {
   name: string;
@@ -26,6 +33,24 @@ export function aggregateRankedItems(
   return [...totals.values()]
     .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name))
     .slice(0, 5);
+}
+
+/** Dashboard-only aggregation. Raw reports remain untouched and mapping is exact by kind + raw name. */
+export function aggregateCanonicalItems(
+  reports: readonly DailyReport[],
+  field: "topDiseases" | "topProcedures",
+  mappings: readonly ReportMapping[],
+  limit = 5,
+): NormalizedTopItem[] {
+  return aggregateNormalizedItems(reports, field, mappings, limit);
+}
+
+export function aggregateCanonicalGroups(
+  reports: readonly DailyReport[],
+  field: "topDiseases" | "topProcedures",
+  mappings: readonly ReportMapping[],
+): NormalizedGroupTotal[] {
+  return aggregateNormalizedGroups(reports, field, mappings);
 }
 
 export function dailyTotal(report: DailyReport): number {
